@@ -29,11 +29,32 @@ def load_config(config_path):
 
 def load_datalayers_json(json_path):
     """Carga los DataLayers de referencia desde un archivo JSON"""
+    # Calcular la ruta absoluta basada en el CWD
+    abs_path = os.path.abspath(json_path)
+    logging.info(f"Ruta relativa recibida: {json_path}")
+    logging.info(f"Directorio de trabajo actual (CWD): {os.getcwd()}")
+    logging.info(f"Ruta absoluta calculada: {abs_path}")
+
+    # --- INTENTAR ABRIR CON RUTA ABSOLUTA ---
+    logging.info(f"Intentando ABRIR usando RUTA ABSOLUTA: {abs_path}")
     try:
-        with open(json_path, "r", encoding="utf-8") as f:
+        # --- Usar abs_path aquí ---
+        with open(abs_path, "r", encoding="utf-8") as f:
+            logging.info(f"¡Éxito! Abierto usando ruta absoluta: {abs_path}")
             return json.load(f)
+    except FileNotFoundError:
+        # Si falla incluso con la absoluta, el problema es más grave
+        logging.error(
+            f"FileNotFoundError incluso usando RUTA ABSOLUTA: {abs_path}", exc_info=True
+        )
+        sys.exit(1)
+        # ------ (Podrías añadir aquí el reintento con la relativa si quieres comparar,
+        #          pero si falla la absoluta, la relativa seguramente también) ------
     except Exception as e:
-        logging.error(f"Error al cargar el archivo JSON de DataLayers: {e}")
+        # Otro error al intentar con la ruta absoluta
+        logging.error(
+            f"Error cargando JSON desde RUTA ABSOLUTA '{abs_path}': {e}", exc_info=True
+        )
         sys.exit(1)
 
 
