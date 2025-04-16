@@ -1,0 +1,62 @@
+{
+  "browser": {
+    "headless": false,
+    "window_size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "wait_timeout": 10,
+    "page_load_timeout": 30
+  },
+  "validation": {
+    "match_threshold": 0.7,
+    "wait_after_click": 1.5,
+    "max_attempts": 3,
+    "retry_interval": 1
+  },
+  "parser": {
+    "script_extraction_patterns": [
+      "<script>\\s*(dataLayer\\.push\\({.*?\\}\\));\\s*</script>",
+      "dataLayer\\.push\\(\\{\\s*'event'.*?\\}\\);"
+    ],
+    "section_title_patterns": [
+      "^(.*?)\\nAnalytics$",
+      "^Analytics\\n(.*?)$"
+    ],
+    "activation_condition_pattern": "¿Cuándo activar\\?(.*?)(?:\\n\\n|\\Z)"
+  },
+  "paths": {
+    "input_dir": "docs/input",
+    "output_dir": "docs/output",
+    "logs_dir": "logs"
+  },
+  "report": {
+    "title": "Validación de DataLayers",
+    "theme": "light",
+    "chart_colors": ["#4CAF50", "#FFC107", "#F44336"]
+  },
+  "element_finder": {
+    "strategies": [
+      "text_exact",
+      "text_contains",
+      "button_text",
+      "component_name",
+      "image_recognition",
+      "relative_position"
+    ],
+    "css_selectors": {
+      "buttons": ["button", ".btn", "[role='button']", "[type='button']", "[type='submit']"],
+      "clickable": ["a", "[onclick]", "[data-click]", "[class*='click']", "[class*='btn']"],
+      "images": ["img", "svg", "[class*='image']", "[class*='img']", "[class*='icon']"],
+      "inputs": ["input", "textarea", "select", "[contenteditable]"]
+    }
+  },
+  "datalayer": {
+    "global_properties": {
+      "required": ["event", "event_category", "event_action", "event_label"],
+      "common_dynamic": ["component_name", "element_text", "user_type"]
+    },
+    "monitor_script": "window.capturedDataLayers = []; window.originalDataLayerPush = window.dataLayer.push; window.dataLayer.push = function(obj) { window.capturedDataLayers.push(JSON.parse(JSON.stringify(obj))); return window.originalDataLayerPush.apply(this, arguments); };"
+  }
+}

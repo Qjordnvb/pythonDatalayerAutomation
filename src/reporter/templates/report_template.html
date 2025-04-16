@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Validación de DataLayers</title>
+    <!-- Agregar Chart.js desde CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2a5885;
+        }
+        h2 {
+            color: #2a5885;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #2a5885;
+            margin-top: 25px;
+        }
+        .summary {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .success {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ff9800;
+            font-weight: bold;
+        }
+        .detail-section {
+            border: 1px solid #eee;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .error-list {
+            background-color: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .warning-list {
+            background-color: #fff8e1;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            overflow-x: auto;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .toggleable {
+            cursor: pointer;
+        }
+        .hidden {
+            display: none;
+        }
+        .stats-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+        .stats-box {
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            padding: 15px;
+            text-align: center;
+            flex: 1;
+            margin: 10px;
+            min-width: 200px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .stats-box h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .stats-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .chart-container {
+            width: 400px;
+            height: 400px;
+            margin: 0 auto 30px auto;
+        }
+
+        /* Estilos para la vista de comparación lado a lado */
+        .comparison-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .comparison-left, .comparison-right {
+            flex: 1;
+            min-width: 45%;
+        }
+
+        .comparison-left {
+            border-right: 1px dashed #ccc;
+            padding-right: 20px;
+        }
+
+        .comparison-right {
+            padding-left: 0;
+        }
+
+        .comparison-right h4, .comparison-left h4 {
+            margin-top: 0;
+            padding: 5px 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+
+        .comparison-left h4 {
+            background-color: #e1f5fe;  /* Azul claro */
+        }
+
+        .comparison-right h4 {
+            background-color: #e8f5e9;  /* Verde claro */
+        }
+
+        /* Ajustes para pantallas pequeñas */
+        @media (max-width: 768px) {
+            .comparison-container {
+                flex-direction: column;
+            }
+
+            .comparison-left {
+                border-right: none;
+                border-bottom: 1px dashed #ccc;
+                padding-right: 0;
+                padding-bottom: 20px;
+            }
+
+            .comparison-right {
+                padding-left: 0;
+                padding-top: 20px;
+            }
+        }
+
+        /* Estilos para la lista de errores navegables */
+        .error-summary {
+            background-color: #ffebee;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+
+        .error-nav-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .error-nav-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #fff;
+            border-left: 4px solid #f44336;
+            border-radius: 4px;
+        }
+
+        .error-nav-item a {
+            color: #2a5885;
+            text-decoration: none;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .error-nav-item a:hover {
+            text-decoration: underline;
+        }
+
+        .error-nav-item ul {
+            margin-top: 5px;
+            padding-left: 20px;
+            color: #666;
+        }
+
+        .error-nav-item ul li {
+            margin-bottom: 3px;
+        }
+
+        .toggle-icon {
+            font-size: 12px;
+            margin-left: 5px;
+        }
+
+        /* Para destacar el DataLayer al que se navega */
+        .highlight-section {
+            animation: highlight-animation 2s ease-in-out;
+        }
+
+        @keyframes highlight-animation {
+            0% { background-color: #fffde7; }
+            50% { background-color: #fff9c4; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Reporte de Validación de DataLayers</h1>
+        <p><strong>URL:</strong> {{ url }}</p>
+        <p><strong>Fecha:</strong> {{ timestamp }}</p>
+    </header>
+
+    <!-- Contenedor de datos para JavaScript -->
+    <div id="report-data"
+         data-valid-count="{{ valid_count }}"
+         data-invalid-count="{{ invalid_count }}"
+         data-matched-count="{{ comparison.matched_count }}"
+         data-missing-count="{{ comparison.missing_count }}"
+         data-extra-count="{{ comparison.extra_count }}"
+         data-success-percent="{{ success_percent }}"
+         data-coverage-percent="{{ comparison.coverage_percent }}"
+         style="display: none;">
+    </div>
+
+    <div class="summary">
+        <h2>Resumen</h2>
+        <p>
+            <strong>Estado:</strong>
+            {% if is_valid %}
+            <span class="success">VÁLIDO</span>
+            {% else %}
+            <span class="error">INVÁLIDO</span>
+            {% endif %}
+        </p>
+
+        <!-- Estadísticas mejoradas -->
+        <div class="stats-container">
+            <div class="stats-box">
+                <h3>Total de DataLayers</h3>
+                <div class="stats-value">{{ details|length }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>DataLayers Válidos</h3>
+                <div class="stats-value success">{{ valid_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>DataLayers con Errores</h3>
+                <div class="stats-value error">{{ invalid_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>Porcentaje de Éxito</h3>
+                <div class="stats-value {% if success_percent >= 80 %}success{% elif success_percent >= 50 %}warning{% else %}error{% endif %}">
+                    {{ success_percent }}%
+                </div>
+            </div>
+        </div>
+
+        <!-- Lista de errores navegables -->
+        {% if invalid_count > 0 %}
+        <div class="error-summary">
+            <h3 class="toggleable" onclick="toggleSection('error-list-summary')">
+                Lista de Errores Encontrados ({{ invalid_count }}) <span class="toggle-icon">▼</span>
+            </h3>
+            <div id="error-list-summary" class="hidden">
+                <ul class="error-nav-list">
+                    {% for detail in details %}
+                        {% if not detail.valid and detail.errors and detail.errors|length > 0 %}
+                            <li class="error-nav-item">
+                                <a href="javascript:void(0)" onclick="navigateToError('datalayer-{{ detail.datalayer_index }}')">
+                                    DataLayer #{{ detail.datalayer_index + 1 }} -
+                                    {% if detail.matched_section %}
+                                        {{ detail.matched_section }}
+                                    {% else %}
+                                        Sin coincidencia
+                                    {% endif %}
+                                    ({{ detail.errors|length }} errores)
+                                </a>
+                                <ul>
+                                    {% for error in detail.errors %}
+                                        <li>{{ error }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Gráfica circular -->
+        <div class="chart-container">
+            <canvas id="dataLayerChart"></canvas>
+        </div>
+    </div>
+
+    <h2>Comparación con DataLayers de Referencia</h2>
+    <div class="summary">
+        <div class="stats-container">
+            <div class="stats-box">
+                <h3>DataLayers en Referencia</h3>
+                <div class="stats-value">{{ comparison.reference_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>DataLayers Capturados</h3>
+                <div class="stats-value">{{ comparison.captured_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>Coincidencias</h3>
+                <div class="stats-value success">{{ comparison.matched_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>No Encontrados</h3>
+                <div class="stats-value error">{{ comparison.missing_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>Extra</h3>
+                <div class="stats-value warning">{{ comparison.extra_count }}</div>
+            </div>
+
+            <div class="stats-box">
+                <h3>Cobertura</h3>
+                <div class="stats-value {% if comparison.coverage_percent >= 80 %}success{% elif comparison.coverage_percent >= 50 %}warning{% else %}error{% endif %}">
+                    {{ comparison.coverage_percent }}%
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfica circular para la comparación -->
+        <div class="chart-container">
+            <canvas id="comparisonChart"></canvas>
+        </div>
+
+        <!-- Sección para DataLayers no encontrados -->
+        {% if comparison.missing_count > 0 %}
+        <h3 class="toggleable" onclick="toggleSection('missing-datalayers')">
+            DataLayers No Encontrados ({{ comparison.missing_count }})
+        </h3>
+        <div id="missing-datalayers" class="hidden">
+            {% for missing in comparison.missing_details %}
+            <div class="detail-section">
+                <h4>{{ missing.reference_title }}</h4>
+                <pre>{{ missing.properties|tojson(indent=2, ensure_ascii=False) }}</pre>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Sección para DataLayers extra -->
+        {% if comparison.extra_count > 0 %}
+        <h3 class="toggleable" onclick="toggleSection('extra-datalayers')">
+            DataLayers Extra ({{ comparison.extra_count }})
+        </h3>
+        <div id="extra-datalayers" class="hidden">
+            {% for extra in comparison.extra_details %}
+            <div class="detail-section">
+                <h4>DataLayer #{{ extra.datalayer_index + 1 }}</h4>
+                <pre>{{ extra.data|tojson(indent=2, ensure_ascii=False) }}</pre>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <h2>Detalles de la Validación</h2>
+
+    {% for detail in details %}
+    <div class="detail-section">
+        <h3 class="toggleable" onclick="toggleSection('datalayer-{{ detail.datalayer_index }}')">
+            DataLayer #{{ detail.datalayer_index + 1 }}
+            {% if detail.valid %}
+            <span class="success">[VÁLIDO]</span>
+            {% else %}
+            <span class="error">[INVÁLIDO]</span>
+            {% endif %}
+            {% if detail.matched_section %}
+            - Coincide con: <span class="success">{{ detail.matched_section }}</span>
+            {% endif %}
+        </h3>
+
+        <div id="datalayer-{{ detail.datalayer_index }}">
+            {% if detail.errors and detail.errors|length > 0 %}
+            <div class="error-list">
+                <h4>Errores ({{ detail.errors|length }}):</h4>
+                <ul>
+                    {% for error in detail.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="comparison-container">
+                <div class="comparison-left">
+                    <h4>DataLayer Capturado</h4>
+                    <pre>{{ detail.data|tojson(indent=2, ensure_ascii=False) }}</pre>
+                </div>
+
+                {% if detail.reference_data %}
+                <div class="comparison-right">
+                    <h4>DataLayer de Referencia</h4>
+                    <pre>{{ detail.reference_data|tojson(indent=2, ensure_ascii=False) }}</pre>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- <h2 class="toggleable" onclick="toggleSection('schema-section')">
+        Esquema Utilizado
+    </h2>
+    <div id="schema-section" class="hidden">
+        <pre>{{ schema|tojson(indent=2, ensure_ascii=False) }}</pre>
+    </div> -->
+
+    <script>
+        // Función para mostrar/ocultar secciones
+        function toggleSection(id) {
+            const element = document.getElementById(id);
+            if (element.classList.contains('hidden')) {
+                element.classList.remove('hidden');
+            } else {
+                element.classList.add('hidden');
+            }
+        }
+
+        // Función para navegar a un error específico
+        function navigateToError(sectionId) {
+            // Expandir la sección si está oculta
+            const section = document.getElementById(sectionId);
+            if (section.classList.contains('hidden')) {
+                toggleSection(sectionId);
+            }
+
+            // Desplazarse hasta la sección
+            section.scrollIntoView({ behavior: 'smooth' });
+
+            // Resaltar la sección temporalmente
+            const parentSection = section.parentElement;
+            parentSection.classList.add('highlight-section');
+
+            // Quitar el resaltado después de la animación
+            setTimeout(function() {
+                parentSection.classList.remove('highlight-section');
+            }, 2000);
+        }
+
+        // Crear la gráfica circular
+        document.addEventListener('DOMContentLoaded', function() {
+            // Obtener datos de los atributos data
+            const reportData = document.getElementById('report-data');
+            const validCount = parseInt(reportData.getAttribute('data-valid-count'), 10) || 0;
+            const invalidCount = parseInt(reportData.getAttribute('data-invalid-count'), 10) || 0;
+            const matchedCount = parseInt(reportData.getAttribute('data-matched-count'), 10) || 0;
+            const missingCount = parseInt(reportData.getAttribute('data-missing-count'), 10) || 0;
+            const extraCount = parseInt(reportData.getAttribute('data-extra-count'), 10) || 0;
+
+            const totalCount = validCount + invalidCount;
+            const comparisonTotal = matchedCount + missingCount + extraCount;
+
+            // Gráfico de validación
+            const ctx = document.getElementById('dataLayerChart').getContext('2d');
+            const dataLayerChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Válidos', 'Con Errores'],
+                    datasets: [{
+                        data: [validCount, invalidCount],
+                        backgroundColor: [
+                            '#4caf50',  // Verde para válidos
+                            '#f44336'   // Rojo para inválidos
+                        ],
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const percentage = Math.round((value / totalCount) * 100);
+                                    return label + ': ' + value + ' (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Gráfico de comparación
+            const comparisonCtx = document.getElementById('comparisonChart').getContext('2d');
+            const comparisonChart = new Chart(comparisonCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Coincidencias', 'No Encontrados', 'Extra'],
+                    datasets: [{
+                        data: [matchedCount, missingCount, extraCount],
+                        backgroundColor: [
+                            '#4caf50',  // Verde para coincidencias
+                            '#f44336',  // Rojo para no encontrados
+                            '#ff9800'   // Naranja para extras
+                        ],
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const percentage = Math.round((value / comparisonTotal) * 100);
+                                    return label + ': ' + value + ' (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

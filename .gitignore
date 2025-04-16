@@ -1,0 +1,49 @@
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.so
+
+# Distribución / empaquetado
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+bin/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Logs
+logs/
+*.log
+
+# Archivos de salida y resultados
+docs/input/datalayers.json
+docs/output
+
+# Archivos sensibles o configuraciones locales
+.env
+
+
+# Archivos específicos del IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Archivos binarios
+*.deb
