@@ -107,104 +107,154 @@ class DataLayerValidator:
     ) -> Tuple[float, List[str]]:
 
         errors = []
-        total_props = len(expected_properties)
-        if total_props == 0:
+        total_expected_props = len(expected_properties)
+        if total_expected_props == 0:
             return 0.0, ["No hay propiedades esperadas definidas en el esquema"]
 
-        matched_props = 0
+        key_fields = ["event", "event_category", "event_action", "event_label"]
+        key_field_weight = 0.7  # 70% del score viene de los campos clave
+        other_field_weight = 1.0 - key_field_weight  # 30% del score viene del resto
 
-        # Verificar campos requeridos
-        for field in required_fields:
-            if field not in datalayer:
-                errors.append(f"Campo requerido '{field}' no encontrado")
-            elif field in expected_properties:
-                # Si el campo es requerido y está en las propiedades esperadas,
-                # verificar si coincide o es dinámico
-                expected_value = expected_properties[field]
+        matched_key_fields = 0
+        total_key_fields_in_expected = 0
+        key_field_errors = []
 
-                # Si es un valor dinámico (null o con {{...}}), considerarlo una coincidencia
-                is_dynamic = expected_value is None or (
-                    isinstance(expected_value, str)
-                    and "{{" in expected_value
-                    and "}}" in expected_value
-                )
+        matched_other_fields = 0
+        total_other_fields_in_expected = 0
+        other_field_errors = []
 
-                if is_dynamic:
-                    matched_props += 1
-                # Para strings, normalizar la comparación
-                elif isinstance(expected_value, str) and isinstance(
-                    datalayer[field], str
-                ):
-                    # Normalizar caracteres unicode para la comparación
-                    norm_expected = self._normalize_string(expected_value)
-                    norm_actual = self._normalize_string(datalayer[field])
-
-                    if norm_expected == norm_actual:
-                        matched_props += 1
-                    else:
-                        # Intentar una comparación menos estricta para caracteres especiales
-                        # Eliminar caracteres de escape y normalizar
-                        clean_expected = self._clean_string(expected_value)
-                        clean_actual = self._clean_string(datalayer[field])
-
-                        if clean_expected == clean_actual:
-                            matched_props += 1
-                        else:
-                            errors.append(
-                                f"Valor para '{field}' no coincide: esperado '{expected_value}', encontrado '{datalayer[field]}'"
-                            )
-                elif datalayer[field] == expected_value:
-                    matched_props += 1
-                else:
-                    errors.append(
-                        f"Valor para '{field}' no coincide: esperado '{expected_value}', encontrado '{datalayer[field]}'"
-                    )
-
-        # Verificar otras propiedades
+        # Iterar sobre las propiedades esperadas para clasificarlas y compararlas
         for prop, expected_value in expected_properties.items():
-            if (
-                prop in datalayer and prop not in required_fields
-            ):  # Evitar contar dos veces los requeridos
-                # Si es un valor dinámico (null o con {{...}}), considerarlo una coincidencia
-                is_dynamic = expected_value is None or (
-                    isinstance(expected_value, str)
-                    and "{{" in expected_value
-                    and "}}" in expected_value
-                )
+            is_key_field = prop in key_fields
+            actual_value = datalayer.get(prop)  # Obtener valor actual o None
 
-                if is_dynamic:
-                    matched_props += 1
-                # Para strings, normalizar la comparación
-                elif isinstance(expected_value, str) and isinstance(
-                    datalayer[prop], str
-                ):
-                    # Normalizar caracteres unicode para la comparación
-                    norm_expected = self._normalize_string(expected_value)
-                    norm_actual = self._normalize_string(datalayer[prop])
+            is_dynamic = expected_value is None or (
+                isinstance(expected_value, str)
+                and "{{" in expected_value
+                and "}}" in expected_value
+            )
 
-                    if norm_expected == norm_actual:
-                        matched_props += 1
-                    else:
-                        # Intentar una comparación menos estricta para caracteres especiales
-                        clean_expected = self._clean_string(expected_value)
-                        clean_actual = self._clean_string(datalayer[prop])
-
-                        if clean_expected == clean_actual:
-                            matched_props += 1
-                        else:
-                            errors.append(
-                                f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{datalayer[prop]}'"
-                            )
-                elif datalayer[prop] == expected_value:
-                    matched_props += 1
+            if is_key_field:
+                total_key_fields_in_expected += 1
+                if prop not in datalayer:
+                    if prop in required_fields:
+                        key_field_errors.append(
+                            f"Campo clave requerido '{prop}' no encontrado"
+                        )
+                elif is_dynamic:
+                    matched_key_fields += 1
                 else:
-                    errors.append(
-                        f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{datalayer[prop]}'"
-                    )
+                    if isinstance(expected_value, str) and isinstance(
+                        actual_value, str
+                    ):
+                        norm_expected = self._normalize_string(expected_value)
+                        norm_actual = self._normalize_string(actual_value)
+                        if norm_expected == norm_actual:
+                            matched_key_fields += 1
+                        else:
+                            clean_expected = self._clean_string(expected_value)
+                            clean_actual = self._clean_string(actual_value)
+                            if clean_expected == clean_actual:
+                                matched_key_fields += 1
+                            else:
+                                key_field_errors.append(
+                                    f"Valor para campo clave '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                                )
+                    elif actual_value == expected_value:
+                        matched_key_fields += 1
+                    else:
+                        key_field_errors.append(
+                            f"Valor para campo clave '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                        )
+            else:  # Campo no clave
+                total_other_fields_in_expected += 1
+                if prop not in datalayer:
+                    if prop in required_fields:
+                        other_field_errors.append(
+                            f"Campo requerido '{prop}' no encontrado"
+                        )
+                elif is_dynamic:
+                    matched_other_fields += 1
+                else:
+                    if isinstance(expected_value, str) and isinstance(
+                        actual_value, str
+                    ):
+                        norm_expected = self._normalize_string(expected_value)
+                        norm_actual = self._normalize_string(actual_value)
+                        if norm_expected == norm_actual:
+                            matched_other_fields += 1
+                        else:
+                            other_field_errors.append(
+                                f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                            )
+                    elif actual_value == expected_value:
+                        matched_other_fields += 1
+                    else:
+                        other_field_errors.append(
+                            f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                        )
 
-        # Calcular puntuación
-        score = matched_props / total_props if total_props > 0 else 0
-        return score, errors
+        # Calcular puntuaciones parciales
+        key_score = (
+            (matched_key_fields / total_key_fields_in_expected)
+            if total_key_fields_in_expected > 0
+            else 1.0
+        )
+        other_score = (
+            (matched_other_fields / total_other_fields_in_expected)
+            if total_other_fields_in_expected > 0
+            else 1.0
+        )
+
+        # Penalización fuerte si 'event' (si se espera y no es dinámico) no coincide
+        event_prop = "event"
+        if event_prop in expected_properties and not (
+            expected_properties[event_prop] is None
+            or (
+                isinstance(expected_properties[event_prop], str)
+                and "{{" in expected_properties[event_prop]
+            )
+        ):
+            # Verificar no existencia o diferencia de valor normalizado
+            if (
+                event_prop not in datalayer
+                or (
+                    isinstance(datalayer.get(event_prop), str)
+                    and isinstance(expected_properties[event_prop], str)
+                    and self._normalize_string(datalayer.get(event_prop, ""))
+                    != self._normalize_string(expected_properties[event_prop])
+                )
+                or (
+                    not isinstance(datalayer.get(event_prop), str)
+                    and datalayer.get(event_prop) != expected_properties[event_prop]
+                )
+            ):
+
+                logger.debug(
+                    f"Penalizando score por no coincidencia en 'event' para {datalayer.get(event_prop)} vs {expected_properties[event_prop]}"
+                )
+                key_score *= 0.1  # Aplica penalización
+
+        # Combinar puntuaciones
+        final_score = (key_score * key_field_weight) + (
+            other_score * other_field_weight
+        )
+
+        # Combinar errores
+        errors.extend(key_field_errors)
+        errors.extend(other_field_errors)
+
+        final_score = min(final_score, 1.0)  # Asegurar que no exceda 1.0
+
+        # Si hay errores graves en campos clave, podríamos reducir aún más o poner a 0
+        if (
+            key_field_errors and key_score < 0.5
+        ):  # Ejemplo: si la mitad de los clave fallan
+            final_score *= 0.5  # Reducir más el score final
+
+        final_score = max(0.0, final_score)  # Asegurar que no sea negativo
+
+        return final_score, errors
 
     def _sort_reference_properties(
         self, captured_datalayer: Dict[str, Any], reference_properties: Dict[str, Any]
@@ -555,77 +605,66 @@ class DataLayerValidator:
 
     def interactive_validation(self) -> Dict[str, Any]:
         try:
-            # Configurar el navegador en modo visible (no headless)
             original_headless = self.headless
             self.headless = False
             self.setup_driver()
 
-            # Navegar a la URL inicial
             logger.info(f"Navegando a URL inicial: {self.url}")
             self.page.goto(self.url)
+            try:
+                # Espera a que la red esté inactiva o hasta 5 segundos
+                self.page.wait_for_load_state("networkidle", timeout=5000)
+            except PlaywrightTimeoutError:
+                logger.warning(
+                    "Timeout esperando networkidle, la página puede no estar completamente cargada."
+                )
+            except Exception as e:
+                logger.warning(f"Error inesperado durante wait_for_load_state: {e}")
 
-            # Esperar a que la página cargue inicialmente
-            self.page.wait_for_selector("body")
+            original_url = self.page.url
+            logger.info(f"URL base para la validación: {original_url}")
 
-            # Inyectar script para monitorear DataLayers
             monitor_script = """
-        // Crear un arreglo para almacenar todos los DataLayers
-        window.allDataLayers = [];
-
-        // Capturar cualquier DataLayer existente
-        if (typeof window.dataLayer !== 'undefined') {
-            if (Array.isArray(window.dataLayer)) {
-                for (var i = 0; i < window.dataLayer.length; i++) {
+            window.allDataLayers = [];
+            if (typeof window.dataLayer !== 'undefined') {
+                if (Array.isArray(window.dataLayer)) {
+                    for (var i = 0; i < window.dataLayer.length; i++) {
+                        try {
+                            window.allDataLayers.push(Object.assign({}, window.dataLayer[i]));
+                        } catch (e) {
+                            console.error('Error al copiar dataLayer existente:', e);
+                        }
+                    }
+                    console.log('Captured ' + window.dataLayer.length + ' existing dataLayer items');
+                }
+            } else {
+                window.dataLayer = [];
+                console.log('Created new dataLayer');
+            }
+            var originalPush = Array.prototype.push;
+            window.dataLayer.push = function() {
+                for (var i = 0; i < arguments.length; i++) {
+                    var obj = arguments[i];
                     try {
-                        window.allDataLayers.push(Object.assign({}, window.dataLayer[i]));
+                        var copy = Object.assign({}, obj);
+                        window.allDataLayers.push(copy);
+                        console.log('DataLayer captured:', copy);
                     } catch (e) {
-                        console.error('Error al copiar dataLayer existente:', e);
+                        console.error('Error capturing dataLayer:', e);
                     }
                 }
-                console.log('Captured ' + window.dataLayer.length + ' existing dataLayer items');
-            }
-        } else {
-            // Si no existe, crearlo
-            window.dataLayer = [];
-            console.log('Created new dataLayer');
-        }
-
-        // Guardar referencia al método push original
-        var originalPush = Array.prototype.push;
-
-        // Sobreescribir el método push del arreglo dataLayer
-        window.dataLayer.push = function() {
-            // Capturar cada objeto que se añade a dataLayer
-            for (var i = 0; i < arguments.length; i++) {
-                var obj = arguments[i];
-                try {
-                    // Crear una copia simple del objeto sin serializar/deserializar
-                    var copy = Object.assign({}, obj);
-                    window.allDataLayers.push(copy);
-                    console.log('DataLayer captured:', copy);
-                } catch (e) {
-                    console.error('Error capturing dataLayer:', e);
-                }
-            }
-
-            // Llamar al método push original
-            return originalPush.apply(this, arguments);
-        };
-
-        console.log('DataLayer monitoring initialized. Total captures:', window.allDataLayers.length);
-
-        // Agregar un mecanismo para inspeccionar desde la consola
-        window.inspectDataLayers = function() {
-            console.table(window.allDataLayers);
-            return window.allDataLayers;
-        };
-        """
-
-            # Ejecutar el script de monitoreo
+                return originalPush.apply(this, arguments);
+            };
+            console.log('DataLayer monitoring initialized. Total captures:', window.allDataLayers.length);
+            window.inspectDataLayers = function() {
+                console.table(window.allDataLayers);
+                return window.allDataLayers;
+            };
+            """
             self.page.evaluate(monitor_script)
 
             print("\n=== MODO INTERACTIVO DE VALIDACIÓN ===")
-            print(f"Se ha abierto el navegador para validar: {self.url}")
+            print(f"Se ha abierto el navegador para validar: {original_url}")
             print("Instrucciones:")
             print("1. Navega por el sitio y realiza las acciones que desees probar.")
             print("2. Los DataLayers se capturarán automáticamente mientras navegas.")
@@ -640,20 +679,26 @@ class DataLayerValidator:
                 "\nPresiona ENTER cuando hayas terminado de interactuar con el sitio..."
             )
 
-            # Esperar un momento para asegurar que todos los DataLayers se hayan procesado
+            current_url = self.page.url
+            logger.info(f"URL actual al finalizar interacción: {current_url}")
+            if original_url != current_url:
+                warning_message = f"Se detectó una navegación/redirección desde la URL base '{original_url}' a '{current_url}'. Los DataLayers finales se capturaron desde esta última URL."
+                logger.warning(warning_message)
+                print(f"\n⚠️ ADVERTENCIA: {warning_message}")
+                if "warnings" not in self.validation_results:
+                    self.validation_results["warnings"] = []
+                if warning_message not in self.validation_results["warnings"]:
+                    self.validation_results["warnings"].append(warning_message)
+
             time.sleep(1)
 
-            # Capturar DataLayers
+            captured_datalayers = []
             try:
-                # Intentamos obtener desde window.allDataLayers
                 captured_datalayers = self.page.evaluate("window.allDataLayers || [];")
                 logger.info(
-                    f"Capturados {len(captured_datalayers)} DataLayers desde window.allDataLayers"
+                    f"Capturados {len(captured_datalayers)} DataLayers desde window.allDataLayers (URL final: {current_url})"
                 )
-
-                # Si no hay resultados, intentamos con otra estrategia
                 if not captured_datalayers or len(captured_datalayers) == 0:
-                    # Intentar acceder directamente a window.dataLayer
                     direct_layers = self.page.evaluate(
                         """
                     if (typeof window.dataLayer !== 'undefined') {
@@ -663,7 +708,6 @@ class DataLayerValidator:
                     }
                     """
                     )
-
                     if direct_layers and len(direct_layers) > 0:
                         captured_datalayers = direct_layers
                         logger.info(
@@ -671,21 +715,22 @@ class DataLayerValidator:
                         )
 
             except Exception as e:
-                logger.error(f"Error al capturar DataLayers: {e}")
+                logger.error(f"Error al capturar DataLayers desde {current_url}: {e}")
                 captured_datalayers = []
 
             logger.info(
                 f"Se han capturado {len(captured_datalayers)} DataLayers en modo interactivo."
             )
 
-            # Filtrar los DataLayers que no son relevantes para la validación
+            # --- Aquí irá el código para filtrar duplicados (Punto 2) ---
+            # Pendiente de implementar en el siguiente paso
+
             filtered_datalayers = self._filter_datalayers(captured_datalayers)
             logger.info(
                 f"DataLayers relevantes para validación: {len(filtered_datalayers)}"
             )
 
             if not filtered_datalayers:
-                # Si no hay DataLayers relevantes después del filtrado
                 self.validation_results["valid"] = False
                 self.validation_results["errors"].append(
                     "No se encontraron DataLayers relevantes para validación"
@@ -693,42 +738,21 @@ class DataLayerValidator:
                 print(
                     "\n⚠️ ADVERTENCIA: No se detectaron DataLayers relevantes para validación."
                 )
-                print(
-                    "Los DataLayers capturados son del sistema GTM o no coinciden con la estructura esperada."
-                )
                 return self.validation_results
 
-            print(f"\nSe capturaron {len(captured_datalayers)} DataLayers.")
+            print(
+                f"\nSe capturaron {len(captured_datalayers)} DataLayers (incluyendo posibles duplicados y eventos GTM)."
+            )
             print(
                 f"De los cuales {len(filtered_datalayers)} son relevantes para validación."
             )
 
-            # Usar filtered_datalayers en lugar de captured_datalayers en el resto del método
-            captured_datalayers = filtered_datalayers
+            captured_datalayers = (
+                filtered_datalayers  # Usar la lista filtrada para la validación
+            )
 
-            if not captured_datalayers or len(captured_datalayers) == 0:
-                self.validation_results["valid"] = False
-                self.validation_results["errors"].append(
-                    "No se encontraron DataLayers durante la navegación interactiva"
-                )
-                print(
-                    "\n⚠️ ADVERTENCIA: No se detectaron DataLayers. Prueba con estos consejos:"
-                )
-                print(
-                    "1. Abre la consola del navegador (F12) y verifica si hay DataLayers usando:"
-                )
-                print("   console.log(window.dataLayer)")
-                print(
-                    "2. Asegúrate de interactuar con elementos que disparen eventos (botones, formularios)"
-                )
-                print(
-                    "3. Verifica si el sitio usa alguna otra estructura de datos para analytics"
-                )
-                return self.validation_results
-
-            # Mostrar un ejemplo del primer DataLayer capturado
             if captured_datalayers and len(captured_datalayers) > 0:
-                print("\nEjemplo del primer DataLayer capturado:")
+                print("\nEjemplo del primer DataLayer relevante capturado:")
                 try:
                     first_dl = captured_datalayers[0]
                     pretty_json = json.dumps(first_dl, indent=2, ensure_ascii=False)
@@ -736,7 +760,6 @@ class DataLayerValidator:
                 except Exception as e:
                     print(f"[Error al mostrar el ejemplo: {str(e)}]")
 
-            # Actualizar las estadísticas
             self.validation_results["summary"]["total_sections"] = len(
                 self.schema.get("sections", [])
             )
@@ -744,9 +767,7 @@ class DataLayerValidator:
                 self.validation_results["summary"]["total_sections"]
             )
 
-            # Procesar cada DataLayer capturado
             for i, datalayer in enumerate(captured_datalayers):
-                # Intentar encontrar coincidencias con secciones del esquema
                 best_match_section = None
                 best_match_score = 0
                 matched_errors = []
@@ -758,38 +779,34 @@ class DataLayerValidator:
                     required_fields = section.get("datalayer", {}).get(
                         "required_fields", []
                     )
-
                     if not expected_properties:
                         continue
 
-                    # Calcular puntuación de coincidencia
                     score, errors = self._calculate_match_score(
                         datalayer, expected_properties, required_fields
                     )
-
-                    # Si es el mejor match hasta ahora
                     if score > best_match_score:
                         best_match_score = score
                         best_match_section = section
                         matched_errors = errors
 
-                # Determinar si es una coincidencia válida
                 match_threshold = self.config.get("validation", {}).get(
                     "match_threshold", 0.7
                 )
                 is_valid_match = best_match_score >= match_threshold
 
-                # Actualizar estadísticas si encontramos una coincidencia
                 if is_valid_match and best_match_section:
-                    # Decrementar secciones no encontradas
-                    self.validation_results["summary"]["not_found_sections"] -= 1
+                    # Esta lógica de actualizar el resumen basado en matches se moverá
+                    # a la función _compare_with_reference más adelante.
+                    # Por ahora la dejamos comentada para evitar doble conteo.
+                    # if self.validation_results["summary"]["not_found_sections"] > 0:
+                    #    self.validation_results["summary"]["not_found_sections"] -= 1
+                    # if len(matched_errors) == 0:
+                    #    self.validation_results["summary"]["valid_sections"] += 1
+                    # else:
+                    #    self.validation_results["summary"]["invalid_sections"] += 1
+                    pass
 
-                    if len(matched_errors) == 0:
-                        self.validation_results["summary"]["valid_sections"] += 1
-                    else:
-                        self.validation_results["summary"]["invalid_sections"] += 1
-
-                # Guardar detalles de este DataLayer
                 detail = {
                     "datalayer_index": i,
                     "data": datalayer,
@@ -797,8 +814,6 @@ class DataLayerValidator:
                     "errors": matched_errors,
                     "source": "interactive",
                 }
-
-                # Si tenemos una coincidencia, agregar información de la sección
                 if best_match_section:
                     detail["matched_section"] = best_match_section.get(
                         "title", "Unknown Section"
@@ -807,39 +822,81 @@ class DataLayerValidator:
 
                 self.validation_results["details"].append(detail)
 
-                # Mostrar progreso
                 if i % 10 == 0 and i > 0:
                     print(f"Procesados {i} de {len(captured_datalayers)} DataLayers...")
 
-            # Actualizar estado global
-            self.validation_results["valid"] = (
-                self.validation_results["summary"]["valid_sections"] > 0
+            # La validez global y el resumen final se calcularán mejor después de la comparación
+            # self.validation_results["valid"] = (
+            #    self.validation_results["summary"]["valid_sections"] > 0
+            # )
+
+            logger.info(
+                "Comparando DataLayers relevantes capturados con la referencia..."
             )
-
-            if self.validation_results["summary"]["valid_sections"] > 0:
-                print(
-                    f"\nValidación completada: {self.validation_results['summary']['valid_sections']} de {self.validation_results['summary']['total_sections']} secciones válidas"
-                )
-            else:
-                print("\nNo se encontraron secciones válidas durante la validación")
-
-            # Realizar comparación con DataLayers de referencia
-            logger.info("Comparando DataLayers capturados con la referencia...")
             comparison_results = self._compare_with_reference(captured_datalayers)
             self.validation_results["comparison"] = comparison_results
 
-            # Mostrar resumen de la comparación
+            # Actualizar el resumen basado en la comparación
+            self.validation_results["summary"]["matched_count"] = (
+                comparison_results.get("matched_count", 0)
+            )
+            self.validation_results["summary"]["missing_count"] = (
+                comparison_results.get("missing_count", 0)
+            )
+            self.validation_results["summary"]["extra_count"] = comparison_results.get(
+                "extra_count", 0
+            )
+            # Recalcular valid/invalid/not_found basado en la comparación para mayor precisión
+            valid_count_comp = 0
+            invalid_count_comp = 0
+            # Iterar sobre los detalles de match_details para contar válidos/inválidos
+            for match_detail in comparison_results.get("match_details", []):
+                detail_index = match_detail.get("datalayer_index")
+                # Buscar el detalle original para ver sus errores
+                original_detail = next(
+                    (
+                        d
+                        for d in self.validation_results["details"]
+                        if d.get("datalayer_index") == detail_index
+                    ),
+                    None,
+                )
+                if original_detail and not original_detail.get("errors"):
+                    valid_count_comp += 1
+                elif original_detail:
+                    invalid_count_comp += 1
+
+            self.validation_results["summary"]["valid_sections"] = valid_count_comp
+            self.validation_results["summary"]["invalid_sections"] = invalid_count_comp
+            self.validation_results["summary"]["not_found_sections"] = (
+                comparison_results.get("missing_count", 0)
+            )  # Los no encontrados son los faltantes
+            self.validation_results["valid"] = (
+                invalid_count_comp == 0
+                and comparison_results.get("missing_count", 0) == 0
+            )  # Válido si no hay inválidos ni faltantes
+
             print("\n=== Comparación con DataLayers de Referencia ===")
             print(
-                f"DataLayers en archivo de referencia: {comparison_results['reference_count']}"
+                f"DataLayers en archivo de referencia: {comparison_results.get('reference_count', 0)}"
             )
-            print(f"DataLayers capturados: {comparison_results['captured_count']}")
-            print(f"Coincidencias encontradas: {comparison_results['matched_count']}")
             print(
-                f"DataLayers de referencia no encontrados: {comparison_results['missing_count']}"
+                f"DataLayers capturados (relevantes): {comparison_results.get('captured_count', 0)}"
             )
-            print(f"DataLayers capturados extra: {comparison_results['extra_count']}")
-            print(f"Cobertura: {comparison_results['coverage_percent']}%")
+            print(
+                f"Coincidencias encontradas: {comparison_results.get('matched_count', 0)}"
+            )
+            print(f" - Válidos: {valid_count_comp}")
+            print(f" - Inválidos: {invalid_count_comp}")
+            print(
+                f"DataLayers de referencia no encontrados: {comparison_results.get('missing_count', 0)}"
+            )
+            print(
+                f"DataLayers capturados extra: {comparison_results.get('extra_count', 0)}"
+            )
+            print(
+                f"Cobertura (% de referencia encontrados): {comparison_results.get('coverage_percent', 0.0)}%"
+            )
 
             return self.validation_results
 
@@ -854,15 +911,15 @@ class DataLayerValidator:
             return self.validation_results
 
         finally:
-            # Restaurar el valor original de headless
             self.headless = original_headless
             if hasattr(self, "browser") and self.browser:
                 try:
                     self.browser.close()
-                    self.playwright.stop()
+                    if hasattr(self, "playwright"):
+                        self.playwright.stop()
                     logger.info("Navegador cerrado correctamente")
-                except:
-                    pass
+                except Exception as close_err:
+                    logger.error(f"Error al cerrar el navegador: {close_err}")
 
     def validate_all_sections(self) -> Dict[str, Any]:
         """
