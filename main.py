@@ -172,17 +172,17 @@ def main():
         total = (
             stats["total_sections"] if stats["total_sections"] > 0 else 1
         )  # Evitar división por cero
-        passed_percent = round((stats["valid_sections"] / total) * 100, 1)
-        failed_percent = round((stats["invalid_sections"] / total) * 100, 1)
+        passed_percent = round((stats["unique_valid_matches"] / total) * 100, 1)
+        failed_percent = round((stats["unique_invalid_matches"] / total) * 100, 1)
         not_found_percent = round((stats["not_found_sections"] / total) * 100, 1)
 
         print("\n=== Resumen de Validación ===")
-        print(f"Total de secciones validadas: {stats['total_sections']}")
+        print(f"Total de datalayers a validar: {stats['total_sections']}")
         print(
-            f"Secciones con DataLayers correctos: {stats['valid_sections']} ({passed_percent}%)"
+            f"Secciones con DataLayers correctos: {stats['unique_valid_matches']} ({passed_percent}%)"
         )
         print(
-            f"Secciones con problemas: {stats['invalid_sections']} ({failed_percent}%)"
+            f"Secciones con problemas: {stats['unique_invalid_matches']} ({failed_percent}%)"
         )
         print(
             f"Secciones no encontradas: {stats['not_found_sections']} ({not_found_percent}%)"

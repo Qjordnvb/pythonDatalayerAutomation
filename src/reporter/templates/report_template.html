@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reporte de Validación de DataLayers</title>
-    <!-- Agregar Chart.js desde CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
     <style>
         body {
@@ -22,20 +21,31 @@
         }
         h1 {
             color: #2a5885;
+            text-align: center;
         }
         h2 {
             color: #2a5885;
             margin-top: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
         }
         h3 {
             color: #2a5885;
             margin-top: 25px;
+            margin-bottom: 10px; /* Añadir espacio debajo de h3 */
+            display: flex; /* Para alinear icono y texto */
+            justify-content: space-between;
+            align-items: center;
+        }
+        h3.toggleable { /* Solo los H3 que son toggleables */
+             cursor: pointer;
         }
         .summary {
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 5px;
+            background-color: #f9f9f9; /* Ligeramente más claro */
+            padding: 60px;
+            border-radius: 8px;
             margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         .success {
             color: #4caf50;
@@ -46,200 +56,215 @@
             font-weight: bold;
         }
         .warning {
-            color: #ff9800;
+            color: #ff9800; /* Naranja/Ámbar para warnings */
+            font-weight: bold;
+        }
+        .neutral { /* Para estado 'Sin Coincidencia Clara' */
+            color: #757575; /* Gris */
             font-weight: bold;
         }
         .detail-section {
-            border: 1px solid #eee;
-            padding: 15px;
+            border: 1px solid #e0e0e0; /* Borde más suave */
+            padding: 15px 20px; /* Más padding horizontal */
             margin-bottom: 20px;
+            border-radius: 8px;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            scroll-margin-top: 10px; /* Espacio para scroll */
+        }
+         .error-list, .warning-list { /* Estilo base común */
+            padding: 12px 15px;
+            border-left-width: 5px;
+            border-left-style: solid;
             border-radius: 5px;
+            margin-top: 15px;
+            margin-bottom: 15px;
         }
         .error-list {
             background-color: #ffebee;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 10px;
+            border-left-color: #f44336;
         }
         .warning-list {
             background-color: #fff8e1;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 10px;
+            border-left-color: #ff9800;
+        }
+        .error-list h4, .warning-list h4 { /* Títulos dentro de listas */
+             margin-top: 0;
+             margin-bottom: 8px;
+             font-size: 0.95em;
+        }
+        .error-list ul, .warning-list ul {
+             padding-left: 20px;
+             margin: 0;
+        }
+        .error-list li, .warning-list li {
+             margin-bottom: 5px;
         }
         pre {
             background-color: #f5f5f5;
-            padding: 10px;
+            padding: 12px;
             overflow-x: auto;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 13px; /* Ligeramente más pequeño */
+            border: 1px solid #e0e0e0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .toggleable {
-            cursor: pointer;
-        }
-        .hidden {
-            display: none;
-        }
+        .hidden { display: none; }
         .stats-container {
             display: flex;
             flex-wrap: wrap;
-            justify-content: space-between;
+            justify-content: space-around;
             margin-bottom: 30px;
+            gap: 15px; /* Espacio entre cajas */
         }
         .stats-box {
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            padding: 15px;
+            background-color: #fff; /* Fondo blanco */
+            border: 1px solid #e0e0e0; /* Borde suave */
+            border-radius: 8px;
+            padding: 15px 20px;
             text-align: center;
-            flex: 1;
-            margin: 10px;
-            min-width: 200px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            flex-basis: 160px; /* Ancho base flexible */
+            flex-grow: 1;
+            margin: 0; /* Quitar margen si usamos gap */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         .stats-box h3 {
             margin-top: 0;
+            margin-bottom: 8px; /* Menos espacio */
             color: #333;
+            font-size: 0.9em; /* Más pequeño */
+            font-weight: normal; /* Normal */
         }
         .stats-value {
-            font-size: 24px;
+            font-size: 22px; /* Ligeramente más pequeño */
             font-weight: bold;
-            margin: 10px 0;
+            margin: 5px 0; /* Menos margen */
+        }
+        .chart-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            align-items: flex-start;
+            margin-top: 20px; /* Espacio arriba */
+            margin-bottom: 10px; /* Menos espacio abajo */
         }
         .chart-container {
-            width: 400px;
-            height: 400px;
-            margin: 0 auto 30px auto;
+           flex-basis: calc(50% - 40px);
+           min-width: 280px; /* Más pequeño */
+           max-width: 350px; /* Más pequeño */
+           height: 350px; /* Más pequeño */
+           margin: 10px;
+           position: relative; /* Para mensajes si no hay datos */
         }
-
-        /* Estilos para la vista de comparación lado a lado */
+         .chart-container p { /* Mensaje de no datos */
+             position: absolute;
+             top: 50%;
+             left: 50%;
+             transform: translate(-50%, -50%);
+             color: #757575;
+         }
         .comparison-container {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
-            margin-top: 15px;
+            margin-top: 20px;
         }
-
         .comparison-left, .comparison-right {
             flex: 1;
-            min-width: 45%;
+            min-width: calc(50% - 10px); /* Ajustar a gap */
         }
-
         .comparison-left {
-            border-right: 1px dashed #ccc;
-            padding-right: 20px;
+            /* border-right: 1px dashed #ccc; */ /* Quitar borde derecho */
+            padding-right: 0px;
         }
-
-        .comparison-right {
-            padding-left: 0;
-        }
-
+        .comparison-right { padding-left: 0; }
         .comparison-right h4, .comparison-left h4 {
             margin-top: 0;
-            padding: 5px 10px;
+            margin-bottom: 8px;
+            padding: 6px 12px;
             background-color: #f0f0f0;
             border-radius: 4px;
+            font-size: 0.9em;
         }
+        .comparison-left h4 { background-color: #e3f2fd; color: #1565c0; } /* Azul */
+        .comparison-right h4 { background-color: #e8f5e9; color: #2e7d32; } /* Verde */
 
-        .comparison-left h4 {
-            background-color: #e1f5fe;  /* Azul claro */
-        }
-
-        .comparison-right h4 {
-            background-color: #e8f5e9;  /* Verde claro */
-        }
-
-        /* Ajustes para pantallas pequeñas */
         @media (max-width: 768px) {
-            .comparison-container {
-                flex-direction: column;
-            }
-
-            .comparison-left {
-                border-right: none;
-                border-bottom: 1px dashed #ccc;
-                padding-right: 0;
-                padding-bottom: 20px;
-            }
-
-            .comparison-right {
-                padding-left: 0;
-                padding-top: 20px;
-            }
+            .comparison-container { flex-direction: column; gap: 10px;}
+            .comparison-left { padding-bottom: 15px; border-bottom: 1px dashed #ccc; }
+            .comparison-right { padding-top: 15px; }
+            .chart-row { flex-direction: column; align-items: center; }
+            .chart-container { flex-basis: 90%; max-width: 350px; margin: 15px auto; }
+            .stats-box { flex-basis: calc(50% - 20px); } /* Dos por fila en móvil */
         }
 
-        /* Estilos para la lista de errores navegables */
-        .error-summary {
-            background-color: #ffebee;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
+        /* Estilos para listas de resumen */
+        .error-summary, .warning-summary {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
+        .error-summary { background-color: #ffebee; border: 1px solid #ffcdd2; }
+        .warning-summary { background-color: #fff8e1; border: 1px solid #ffecb3; }
 
-        .error-nav-list {
+        .error-nav-list, .warning-nav-list {
             list-style-type: none;
             padding-left: 0;
+            margin-top: 15px; /* Espacio desde título */
         }
-
-        .error-nav-item {
-            margin-bottom: 15px;
-            padding: 10px;
+        .error-nav-item, .warning-nav-item {
+            margin-bottom: 10px;
+            padding: 12px 15px;
             background-color: #fff;
-            border-left: 4px solid #f44336;
-            border-radius: 4px;
+            border-radius: 6px;
+            border: 1px solid #eee;
         }
+        .error-nav-item { border-left: 5px solid #f44336; }
+        .warning-nav-item { border-left: 5px solid #ff9800; }
 
-        .error-nav-item a {
-            color: #2a5885;
+        .error-nav-item a, .warning-nav-item a {
+            color: #1e88e5; /* Azul más brillante */
             text-decoration: none;
             font-weight: bold;
             display: block;
             margin-bottom: 5px;
+            font-size: 0.95em;
         }
+        .error-nav-item a:hover, .warning-nav-item a:hover { text-decoration: underline; color: #0d47a1; }
 
-        .error-nav-item a:hover {
-            text-decoration: underline;
+        /* Estilo para lista de errores/warnings dentro del resumen */
+        .error-nav-item ul, .warning-nav-item ul {
+            margin-top: 8px;
+            padding-left: 0; /* Sin indentación extra */
+            color: #555; /* Gris oscuro */
+            list-style-type: none;
+            font-size: 0.9em;
         }
+        .error-nav-item ul li, .warning-nav-item ul li {
+             margin-bottom: 4px;
+             /* Añadir icono directamente aquí si se desea */
+        }
+        /* Asegurar que el span .warning herede el color */
+        .warning-nav-item ul li .warning { color: #ff9800; }
 
-        .error-nav-item ul {
-            margin-top: 5px;
-            padding-left: 20px;
-            color: #666;
-        }
-
-        .error-nav-item ul li {
-            margin-bottom: 3px;
-        }
 
         .toggle-icon {
-            font-size: 12px;
-            margin-left: 5px;
+            font-size: 1.1em; /* Ligeramente más grande */
+            margin-left: 8px;
+            display: inline-block;
+            transition: transform 0.2s ease-in-out; /* Animación suave */
         }
-
-        /* Para destacar el DataLayer al que se navega */
+        .hidden + .toggle-icon {
+             transform: rotate(-90deg); /* Rotar cuando está oculto */
+        }
         .highlight-section {
-            animation: highlight-animation 2s ease-in-out;
+            animation: highlight-animation 1.5s ease-in-out;
         }
-
         @keyframes highlight-animation {
-            0% { background-color: #fffde7; }
-            50% { background-color: #fff9c4; }
-            100% { background-color: transparent; }
+            0% { background-color: #fffde7; box-shadow: 0 0 10px #ffecb3; }
+            100% { background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         }
     </style>
 </head>
@@ -247,25 +272,34 @@
     <header>
         <h1>Reporte de Validación de DataLayers</h1>
         <p><strong>URL:</strong> {{ url }}</p>
-        <p><strong>Fecha:</strong> {{ timestamp }}</p>
+        <p><strong>Fecha y Hora:</strong> {{ timestamp | format_datetime }}</p> {# Asumiendo filtro format_datetime #}
+        {% if general_warnings and general_warnings|length > 0 %}
+        <div class="warning-list" style="margin-top: 15px; border-left-color: #ffa726; background-color: #fff3e0;">
+    <h4>Notas Generales de Ejecución:</h4> {# Título más genérico #}
+         <ul>
+        {% for warning in general_warnings %}
+        <li><span class="warning">⚠️ {{ warning }}</span></li>
+        {% endfor %}
+         </ul>
+        </div>
+        {% endif %}
     </header>
 
-    <!-- Contenedor de datos para JavaScript -->
     <div id="report-data"
          data-valid-count="{{ valid_count }}"
          data-invalid-count="{{ invalid_count }}"
          data-matched-count="{{ comparison.matched_count }}"
          data-missing-count="{{ comparison.missing_count }}"
-         data-extra-count="{{ comparison.extra_count }}"
+
          data-success-percent="{{ success_percent }}"
          data-coverage-percent="{{ comparison.coverage_percent }}"
          style="display: none;">
     </div>
 
     <div class="summary">
-        <h2>Resumen</h2>
-        <p>
-            <strong>Estado:</strong>
+        <h2>Resumen General</h2>
+        <p style="text-align: center; margin-bottom: 20px;">
+            <strong>Estado General:</strong>
             {% if is_valid %}
             <span class="success">VÁLIDO</span>
             {% else %}
@@ -273,48 +307,47 @@
             {% endif %}
         </p>
 
-        <!-- Estadísticas mejoradas -->
         <div class="stats-container">
+            <div class="stats-box"><h3>Referencias Totales</h3><div class="stats-value">{{ comparison.reference_count }}</div></div>
             <div class="stats-box">
-                <h3>Total de DataLayers</h3>
-                <div class="stats-value">{{ details|length }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>DataLayers Válidos</h3>
+                <h3>Válidos</h3> {# Cambiado título #}
                 <div class="stats-value success">{{ valid_count }}</div>
             </div>
-
             <div class="stats-box">
-                <h3>DataLayers con Errores</h3>
+                <h3>Inválidos</h3> {# Cambiado título #}
                 <div class="stats-value error">{{ invalid_count }}</div>
             </div>
-
+            {% if warning_count > 0 %}
             <div class="stats-box">
-                <h3>Porcentaje de Éxito</h3>
-                <div class="stats-value {% if success_percent >= 80 %}success{% elif success_percent >= 50 %}warning{% else %}error{% endif %}">
-                    {{ success_percent }}%
+                <h3>Con Warnings</h3> {# Cambiado título #}
+                <div class="stats-value warning">{{ warning_count }}</div>
+            </div>
+            {% endif %}
+            <div class="stats-box">
+                <h3>Éxito Validación</h3> {# Cambiado título #}
+                 <div class="stats-value {% if success_percent >= 80 %}success{% elif success_percent >= 50 %}warning{% else %}error{% endif %}">
+                    {{ "%.1f"|format(success_percent) }}%
                 </div>
             </div>
         </div>
 
-        <!-- Lista de errores navegables -->
+        {# --- RESUMEN DE ERRORES --- #}
         {% if invalid_count > 0 %}
         <div class="error-summary">
             <h3 class="toggleable" onclick="toggleSection('error-list-summary')">
-                Lista de Errores Encontrados ({{ invalid_count }}) <span class="toggle-icon">▼</span>
+                <span>Lista de DataLayers Inválidos ({{ invalid_count }})</span> <span class="toggle-icon">▼</span>
             </h3>
             <div id="error-list-summary" class="hidden">
                 <ul class="error-nav-list">
                     {% for detail in details %}
-                        {% if not detail.valid and detail.errors and detail.errors|length > 0 %}
+                        {% if detail.valid is sameas false and detail.errors and detail.errors|length > 0 %}
                             <li class="error-nav-item">
-                                <a href="javascript:void(0)" onclick="navigateToError('datalayer-{{ detail.datalayer_index }}')">
+                                <a href="javascript:void(0)" onclick="navigateToSection('datalayer-section-{{ detail.datalayer_index }}')">
                                     DataLayer #{{ detail.datalayer_index + 1 }} -
                                     {% if detail.matched_section %}
                                         {{ detail.matched_section }}
                                     {% else %}
-                                        Sin coincidencia
+                                        (Error sin coincidencia clara) {# Ajustar texto #}
                                     {% endif %}
                                     ({{ detail.errors|length }} errores)
                                 </a>
@@ -330,108 +363,127 @@
             </div>
         </div>
         {% endif %}
+        {# --- FIN RESUMEN DE ERRORES --- #}
 
-        <!-- Gráfica circular -->
-        <div class="chart-container">
-            <canvas id="dataLayerChart"></canvas>
+        {# --- INICIO NUEVO RESUMEN DE WARNINGS --- #}
+        {% if warning_count > 0 %}
+        <div class="warning-summary">
+            <h3 class="toggleable" onclick="toggleSection('warning-list-summary')">
+                <span>Lista de DataLayers con Warnings ({{ warning_count }})</span> <span class="toggle-icon">▼</span>
+            </h3>
+            <div id="warning-list-summary" class="hidden">
+                <ul class="warning-nav-list">
+                    {% for detail in details_with_warnings %} {# Usar lista filtrada #}
+                        <li class="warning-nav-item">
+                            <a href="javascript:void(0)" onclick="navigateToSection('datalayer-section-{{ detail.datalayer_index }}')">
+                                DataLayer #{{ detail.datalayer_index + 1 }} -
+                                {% if detail.matched_section %}
+                                    {{ detail.matched_section }}
+                                {% else %}
+                                    (Sin coincidencia clara)
+                                {% endif %}
+                                ({{ detail.warnings|length }} warnings)
+                            </a>
+                            <ul>
+                                {% for warning in detail.warnings %}
+                                    <li><span class="warning">⚠️ {{ warning }}</span></li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
         </div>
-    </div>
+        {% endif %}
+        {# --- FIN NUEVO RESUMEN DE WARNINGS --- #}
 
-    <h2>Comparación con DataLayers de Referencia</h2>
+        <div class="chart-row">
+             <div class="chart-container" id="validation-chart-container"> {# Añadir ID específico #}
+                <h4>Validación Capturados</h4> {# Añadir título #}
+                <canvas id="dataLayerChart"></canvas>
+            </div>
+             <div class="chart-container" id="comparison-chart-container"> {# Añadir ID específico #}
+                 <h4>Comparación vs Referencia</h4> {# Añadir título #}
+                <canvas id="comparisonChart"></canvas>
+            </div>
+        </div>
+    </div> {# Fin div.summary #}
+
+    {# Mover comparación a su propia sección #}
     <div class="summary">
+        <h2>Comparación con Referencia</h2>
         <div class="stats-container">
-            <div class="stats-box">
-                <h3>DataLayers en Referencia</h3>
-                <div class="stats-value">{{ comparison.reference_count }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>DataLayers Capturados</h3>
-                <div class="stats-value">{{ comparison.captured_count }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>Coincidencias</h3>
-                <div class="stats-value success">{{ comparison.matched_count }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>No Encontrados</h3>
-                <div class="stats-value error">{{ comparison.missing_count }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>Extra</h3>
-                <div class="stats-value warning">{{ comparison.extra_count }}</div>
-            </div>
-
-            <div class="stats-box">
-                <h3>Cobertura</h3>
-                <div class="stats-value {% if comparison.coverage_percent >= 80 %}success{% elif comparison.coverage_percent >= 50 %}warning{% else %}error{% endif %}">
-                    {{ comparison.coverage_percent }}%
-                </div>
-            </div>
+             <div class="stats-box"><h3>Referencias Totales</h3><div class="stats-value">{{ comparison.reference_count }}</div></div>
+             <div class="stats-box"><h3>Coincidencias</h3><div class="stats-value success">{{ comparison.matched_count }}</div></div>
+             <div class="stats-box"><h3>No Encontrados</h3><div class="stats-value error">{{ comparison.missing_count }}</div></div>
+             <div class="stats-box"><h3>Cobertura</h3><div class="stats-value {% if comparison.coverage_percent >= 80 %}success{% elif comparison.coverage_percent >= 50 %}warning{% else %}error{% endif %}">{{ "%.1f"|format(comparison.coverage_percent) }}%</div></div>
         </div>
 
-        <!-- Gráfica circular para la comparación -->
-        <div class="chart-container">
-            <canvas id="comparisonChart"></canvas>
-        </div>
-
-        <!-- Sección para DataLayers no encontrados -->
         {% if comparison.missing_count > 0 %}
         <h3 class="toggleable" onclick="toggleSection('missing-datalayers')">
-            DataLayers No Encontrados ({{ comparison.missing_count }})
+            <span>DataLayers de Referencia No Encontrados ({{ comparison.missing_count }})</span> <span class="toggle-icon">▼</span>
         </h3>
         <div id="missing-datalayers" class="hidden">
             {% for missing in comparison.missing_details %}
             <div class="detail-section">
-                <h4>{{ missing.reference_title }}</h4>
+                <h4>{{ missing.reference_title }} (ID: {{ missing.reference_id }})</h4>
                 <pre>{{ missing.properties|tojson(indent=2, ensure_ascii=False) }}</pre>
             </div>
             {% endfor %}
         </div>
         {% endif %}
 
-        <!-- Sección para DataLayers extra -->
-        {% if comparison.extra_count > 0 %}
-        <h3 class="toggleable" onclick="toggleSection('extra-datalayers')">
-            DataLayers Extra ({{ comparison.extra_count }})
-        </h3>
-        <div id="extra-datalayers" class="hidden">
-            {% for extra in comparison.extra_details %}
-            <div class="detail-section">
-                <h4>DataLayer #{{ extra.datalayer_index + 1 }}</h4>
-                <pre>{{ extra.data|tojson(indent=2, ensure_ascii=False) }}</pre>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-    </div>
 
-    <h2>Detalles de la Validación</h2>
+    </div> {# Fin div.summary para Comparación #}
 
-    {% for detail in details %}
-    <div class="detail-section">
-        <h3 class="toggleable" onclick="toggleSection('datalayer-{{ detail.datalayer_index }}')">
-            DataLayer #{{ detail.datalayer_index + 1 }}
-            {% if detail.valid %}
-            <span class="success">[VÁLIDO]</span>
-            {% else %}
-            <span class="error">[INVÁLIDO]</span>
-            {% endif %}
-            {% if detail.matched_section %}
-            - Coincide con: <span class="success">{{ detail.matched_section }}</span>
-            {% endif %}
-        </h3>
 
-        <div id="datalayer-{{ detail.datalayer_index }}">
-            {% if detail.errors and detail.errors|length > 0 %}
+    <h2>Detalles de DataLayers Capturados</h2>
+
+    {% for detail in details %} {# Iterar sobre la lista completa 'details' #}
+    <div class="detail-section" id="datalayer-section-{{ detail.datalayer_index }}">
+         <h3 class="toggleable" onclick="toggleSection('datalayer-{{ detail.datalayer_index }}')">
+             <span>
+                 DataLayer #{{ detail.datalayer_index + 1 }}
+                 {% if detail.valid is sameas true %}
+                     <span class="success">[VÁLIDO]</span>
+                 {% elif detail.valid is sameas false %}
+                     <span class="error">[INVÁLIDO]</span>
+                 {% elif detail.matched_section %} {# Caso: Match por debajo del umbral pero con errores #}
+                      <span class="warning">[MATCH DÉBIL CON ERRORES]</span>
+                 {% else %} {# Caso: Sin coincidencia clara #}
+                     <span class="neutral">[EXTRA / SIN COINCIDENCIA]</span>
+                 {% endif %}
+
+                 {% if detail.matched_section %}
+                 - Ref: <span style="font-weight: normal;">{{ detail.matched_section }} (Score: {{ "%.2f"|format(detail.match_score * 100) }}%)</span>
+                 {% endif %}
+             </span>
+              <span class="toggle-icon">▼</span>
+         </h3>
+
+        <div id="datalayer-{{ detail.datalayer_index }}" class="hidden">
+
+            {# Mostrar Errores SOLO si el estado es INVÁLIDO o Match Débil con Errores #}
+            {% if detail.valid is sameas false or (detail.matched_section and detail.errors) %}
+             {% if detail.errors and detail.errors|length > 0 %}
             <div class="error-list">
-                <h4>Errores ({{ detail.errors|length }}):</h4>
+                <h4>Errores Detectados ({{ detail.errors|length }}):</h4>
                 <ul>
                     {% for error in detail.errors %}
                     <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+             {% endif %}
+            {% endif %}
+
+            {# Mostrar Warnings (siempre que existan) #}
+            {% if detail.warnings and detail.warnings|length > 0 %}
+            <div class="warning-list">
+                <h4>Warnings Detectados ({{ detail.warnings|length }}):</h4>
+                <ul>
+                    {% for warning in detail.warnings %}
+                    <li><span class="warning">⚠️ {{ warning }}</span></li>
                     {% endfor %}
                 </ul>
             </div>
@@ -445,57 +497,84 @@
 
                 {% if detail.reference_data %}
                 <div class="comparison-right">
-                    <h4>DataLayer de Referencia</h4>
+                    <h4>DataLayer de Referencia ({{ detail.matched_section }})</h4>
                     <pre>{{ detail.reference_data|tojson(indent=2, ensure_ascii=False) }}</pre>
                 </div>
+                {% elif detail.matched_section %} {# Si hubo match pero sin datos de referencia? #}
+                 <div class="comparison-right">
+                    <h4>DataLayer de Referencia ({{ detail.matched_section }})</h4>
+                    <pre>(Datos de referencia no disponibles)</pre>
+                 </div>
+                {% else %} {# Sin coincidencia clara #}
+                  <div class="comparison-right">
+                    <h4>DataLayer de Referencia</h4>
+                    <pre>(No se encontró referencia)</pre>
+                  </div>
                 {% endif %}
             </div>
         </div>
     </div>
+    {% else %}
+      <p>No se capturaron DataLayers relevantes durante esta ejecución.</p>
     {% endfor %}
 
-    <!-- <h2 class="toggleable" onclick="toggleSection('schema-section')">
-        Esquema Utilizado
-    </h2>
-    <div id="schema-section" class="hidden">
-        <pre>{{ schema|tojson(indent=2, ensure_ascii=False) }}</pre>
-    </div> -->
 
     <script>
-        // Función para mostrar/ocultar secciones
         function toggleSection(id) {
             const element = document.getElementById(id);
-            if (element.classList.contains('hidden')) {
-                element.classList.remove('hidden');
+            const headerElement = element.previousElementSibling;
+            const icon = headerElement ? headerElement.querySelector('.toggle-icon') : null;
+
+            if (element) { // Verificar que el elemento existe
+                if (element.classList.contains('hidden')) {
+                    element.classList.remove('hidden');
+                    if(icon) icon.style.transform = 'rotate(0deg)'; // Flecha normal
+                } else {
+                    element.classList.add('hidden');
+                     if(icon) icon.style.transform = 'rotate(-90deg)'; // Flecha hacia abajo/lado
+                }
             } else {
-                element.classList.add('hidden');
+                 console.error("Elemento a mostrar/ocultar no encontrado:", id);
             }
         }
 
-        // Función para navegar a un error específico
-        function navigateToError(sectionId) {
-            // Expandir la sección si está oculta
-            const section = document.getElementById(sectionId);
-            if (section.classList.contains('hidden')) {
-                toggleSection(sectionId);
+        function navigateToSection(sectionId) {
+            const targetElement = document.getElementById(sectionId);
+
+            if (targetElement) {
+                 const detailContentId = 'datalayer-' + sectionId.split('-')[2];
+                 const detailContentElement = document.getElementById(detailContentId);
+                 if (detailContentElement && detailContentElement.classList.contains('hidden')) {
+                      toggleSection(detailContentId);
+                 }
+
+                // Esperar un instante para que la sección se expanda antes de hacer scroll
+                setTimeout(() => {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    targetElement.classList.add('highlight-section');
+                    setTimeout(function() {
+                        targetElement.classList.remove('highlight-section');
+                    }, 1500); // Reducir duración highlight
+                }, 100); // Pequeña espera
+
+            } else {
+                 console.warn("Elemento no encontrado para navegar:", sectionId);
             }
-
-            // Desplazarse hasta la sección
-            section.scrollIntoView({ behavior: 'smooth' });
-
-            // Resaltar la sección temporalmente
-            const parentSection = section.parentElement;
-            parentSection.classList.add('highlight-section');
-
-            // Quitar el resaltado después de la animación
-            setTimeout(function() {
-                parentSection.classList.remove('highlight-section');
-            }, 2000);
         }
 
-        // Crear la gráfica circular
+        // Inicializar iconos de toggle
         document.addEventListener('DOMContentLoaded', function() {
-            // Obtener datos de los atributos data
+             document.querySelectorAll('.toggleable .toggle-icon').forEach(icon => {
+                const sectionId = icon.closest('.toggleable').nextElementSibling.id;
+                const sectionElement = document.getElementById(sectionId);
+                if (sectionElement && sectionElement.classList.contains('hidden')) {
+                    icon.style.transform = 'rotate(-90deg)';
+                } else {
+                     icon.style.transform = 'rotate(0deg)';
+                }
+            });
+
+            // Código para inicializar las gráficas Chart.js
             const reportData = document.getElementById('report-data');
             const validCount = parseInt(reportData.getAttribute('data-valid-count'), 10) || 0;
             const invalidCount = parseInt(reportData.getAttribute('data-invalid-count'), 10) || 0;
@@ -503,91 +582,78 @@
             const missingCount = parseInt(reportData.getAttribute('data-missing-count'), 10) || 0;
             const extraCount = parseInt(reportData.getAttribute('data-extra-count'), 10) || 0;
 
-            const totalCount = validCount + invalidCount;
-            const comparisonTotal = matchedCount + missingCount + extraCount;
+            const totalValidation = validCount + invalidCount; // No sumar 1 aquí
+            const totalComparison = matchedCount + missingCount + extraCount;
 
             // Gráfico de validación
-            const ctx = document.getElementById('dataLayerChart').getContext('2d');
-            const dataLayerChart = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: ['Válidos', 'Con Errores'],
-                    datasets: [{
-                        data: [validCount, invalidCount],
-                        backgroundColor: [
-                            '#4caf50',  // Verde para válidos
-                            '#f44336'   // Rojo para inválidos
-                        ],
-                        borderColor: '#fff',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 14
-                                }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.raw || 0;
-                                    const percentage = Math.round((value / totalCount) * 100);
-                                    return label + ': ' + value + ' (' + percentage + '%)';
+            const ctxValidation = document.getElementById('dataLayerChart').getContext('2d');
+             const validationChartContainer = document.getElementById('validation-chart-container');
+             if (totalValidation > 0) {
+                const dataLayerChart = new Chart(ctxValidation, {
+                    type: 'pie',
+                    data: {
+                        labels: ['Válidos', 'Inválidos'],
+                        datasets: [{
+                            data: [validCount, invalidCount],
+                            backgroundColor: ['#66bb6a', '#ef5350'], // Colores más suaves
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const value = context.raw || 0;
+                                        const percentage = totalValidation > 0 ? Math.round((value / totalValidation) * 100) : 0;
+                                        return `${context.label}: ${value} (${percentage}%)`;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            });
+                });
+            } else {
+                  if (validationChartContainer) validationChartContainer.innerHTML = "<p style='text-align: center; padding: 20px;'>No hay datos de validación para mostrar.</p>";
+            }
 
             // Gráfico de comparación
-            const comparisonCtx = document.getElementById('comparisonChart').getContext('2d');
-            const comparisonChart = new Chart(comparisonCtx, {
-                type: 'pie',
-                data: {
-                    labels: ['Coincidencias', 'No Encontrados', 'Extra'],
-                    datasets: [{
-                        data: [matchedCount, missingCount, extraCount],
-                        backgroundColor: [
-                            '#4caf50',  // Verde para coincidencias
-                            '#f44336',  // Rojo para no encontrados
-                            '#ff9800'   // Naranja para extras
-                        ],
-                        borderColor: '#fff',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 14
-                                }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.raw || 0;
-                                    const percentage = Math.round((value / comparisonTotal) * 100);
-                                    return label + ': ' + value + ' (' + percentage + '%)';
+            const ctxComparison = document.getElementById('comparisonChart').getContext('2d');
+            const comparisonChartContainer = document.getElementById('comparison-chart-container');
+            if (totalComparison > 0) {
+                const comparisonChart = new Chart(ctxComparison, {
+                    type: 'pie',
+                    data: {
+                        labels: ['Coincidencias', 'No Encontrados', 'Extra'],
+                        datasets: [{
+                            data: [matchedCount, missingCount, extraCount],
+                            backgroundColor: ['#66bb6a', '#ef5350', '#ffa726'], // Colores más suaves
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        }]
+                    },
+                     options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                         const value = context.raw || 0;
+                                         const percentage = totalComparison > 0 ? Math.round((value / totalComparison) * 100) : 0;
+                                         return `${context.label}: ${value} (${percentage}%)`;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            });
+                });
+            } else {
+                  if (comparisonChartContainer) comparisonChartContainer.innerHTML = "<p style='text-align: center; padding: 20px;'>No hay datos de comparación para mostrar.</p>";
+            }
         });
     </script>
 </body>

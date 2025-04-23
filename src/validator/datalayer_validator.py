@@ -1,18 +1,23 @@
+# src/validator/datalayer_validator.py
+
+import hashlib
 import json
 import logging
 import re
 import os
 import time
 from typing import Dict, List, Any, Tuple, Optional
-
+from urllib.parse import urlparse
 from playwright.sync_api import (
     sync_playwright,
     Page,
     Browser,
+    Frame,
     TimeoutError as PlaywrightTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
+LOCAL_STORAGE_KEY = "capturedDataLayersLs"
 
 
 class DataLayerValidator:
@@ -44,7 +49,7 @@ class DataLayerValidator:
         self.validation_results = {
             "valid": True,
             "errors": [],
-            "warnings": [],
+            "warnings": [],  # Lista para warnings generales a nivel de ejecución
             "details": [],
             "sections": [],
             "summary": {
@@ -104,109 +109,182 @@ class DataLayerValidator:
         datalayer: Dict[str, Any],
         expected_properties: Dict[str, Any],
         required_fields: List[str],
-    ) -> Tuple[float, List[str]]:
+    ) -> Tuple[float, List[str], List[str]]:
+        """
+        Calcula un score de coincidencia ponderado para un DataLayer capturado
+        contra las propiedades esperadas de una referencia.
+        También identifica errores específicos (valores, campos faltantes, campos extra) y
+        warnings (ej. diferencias solo de mayúsculas/acentos).
 
-        errors = []
+        Implementa:
+        - Opción B para warnings: El warning por mayúsculas/acentos se añade
+          siempre que aplique a un campo, incluso si hay otros errores.
+        - NUEVO: Verificación de campos extra: Añade un error si el DataLayer
+          capturado tiene campos no definidos en la referencia.
+        """
+        errors = []  # Lista para acumular todos los errores de esta comparación
+        warnings_list = []  # Lista para acumular todos los warnings de esta comparación
         total_expected_props = len(expected_properties)
         if total_expected_props == 0:
-            return 0.0, ["No hay propiedades esperadas definidas en el esquema"]
+            return (
+                0.0,
+                [
+                    "No hay propiedades esperadas definidas en el esquema de referencia para esta sección"
+                ],
+                [],
+            )
 
-        key_fields = ["event", "event_category", "event_action", "event_label"]
-        key_field_weight = 0.7  # 70% del score viene de los campos clave
-        other_field_weight = 1.0 - key_field_weight  # 30% del score viene del resto
+        # Definición de campos clave y pesos
+        key_fields_primary = ["event", "event_category", "event_action", "event_label"]
+        key_fields_secondary = ["component_name"]
+        primary_weight = 0.60
+        secondary_weight = 0.20
+        other_weight = 0.20
 
-        matched_key_fields = 0
-        total_key_fields_in_expected = 0
-        key_field_errors = []
+        # Contadores para cálculo de score ponderado
+        matched_primary, total_primary_in_expected = 0, 0
+        matched_secondary, total_secondary_in_expected = 0, 0
+        matched_other, total_other_in_expected = 0, 0
 
-        matched_other_fields = 0
-        total_other_fields_in_expected = 0
-        other_field_errors = []
+        # Listas temporales para agrupar mensajes de error por tipo
+        primary_errors, secondary_errors, other_errors = [], [], []
 
-        # Iterar sobre las propiedades esperadas para clasificarlas y compararlas
+        # --- INICIO BUCLE PRINCIPAL DE COMPARACIÓN POR CAMPO (Referencia vs Capturado) ---
         for prop, expected_value in expected_properties.items():
-            is_key_field = prop in key_fields
-            actual_value = datalayer.get(prop)  # Obtener valor actual o None
-
+            actual_value = datalayer.get(prop)
             is_dynamic = expected_value is None or (
                 isinstance(expected_value, str)
                 and "{{" in expected_value
                 and "}}" in expected_value
             )
+            is_primary = prop in key_fields_primary
+            is_secondary = prop in key_fields_secondary
+            field_type_log = "otro"
+            if is_primary:
+                field_type_log = "clave primario"
+            elif is_secondary:
+                field_type_log = "clave secundario"
 
-            if is_key_field:
-                total_key_fields_in_expected += 1
-                if prop not in datalayer:
-                    if prop in required_fields:
-                        key_field_errors.append(
-                            f"Campo clave requerido '{prop}' no encontrado"
-                        )
-                elif is_dynamic:
-                    matched_key_fields += 1
-                else:
+            prop_matched = False
+            prop_error = False
+            prop_warning = False
+
+            if prop in datalayer:
+                if not is_dynamic:
                     if isinstance(expected_value, str) and isinstance(
                         actual_value, str
                     ):
                         norm_expected = self._normalize_string(expected_value)
                         norm_actual = self._normalize_string(actual_value)
                         if norm_expected == norm_actual:
-                            matched_key_fields += 1
+                            prop_matched = True
                         else:
                             clean_expected = self._clean_string(expected_value)
                             clean_actual = self._clean_string(actual_value)
                             if clean_expected == clean_actual:
-                                matched_key_fields += 1
+                                prop_matched = True
+                                prop_warning = True  # Marcar para añadir warning
                             else:
-                                key_field_errors.append(
-                                    f"Valor para campo clave '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
-                                )
+                                prop_error = True  # Error de valor fundamental
+                                current_error_msg = f"Valor para '{field_type_log} {prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                                if is_primary:
+                                    primary_errors.append(current_error_msg)
+                                elif is_secondary:
+                                    secondary_errors.append(current_error_msg)
+                                else:
+                                    other_errors.append(current_error_msg)
                     elif actual_value == expected_value:
-                        matched_key_fields += 1
+                        prop_matched = True
                     else:
-                        key_field_errors.append(
-                            f"Valor para campo clave '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                        prop_error = (
+                            True  # Error de valor (tipos no string o diferentes)
                         )
-            else:  # Campo no clave
-                total_other_fields_in_expected += 1
-                if prop not in datalayer:
-                    if prop in required_fields:
-                        other_field_errors.append(
-                            f"Campo requerido '{prop}' no encontrado"
-                        )
-                elif is_dynamic:
-                    matched_other_fields += 1
-                else:
-                    if isinstance(expected_value, str) and isinstance(
-                        actual_value, str
-                    ):
-                        norm_expected = self._normalize_string(expected_value)
-                        norm_actual = self._normalize_string(actual_value)
-                        if norm_expected == norm_actual:
-                            matched_other_fields += 1
+                        current_error_msg = f"Valor para '{field_type_log} {prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
+                        if is_primary:
+                            primary_errors.append(current_error_msg)
+                        elif is_secondary:
+                            secondary_errors.append(current_error_msg)
                         else:
-                            other_field_errors.append(
-                                f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
-                            )
-                    elif actual_value == expected_value:
-                        matched_other_fields += 1
-                    else:
-                        other_field_errors.append(
-                            f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
-                        )
+                            other_errors.append(current_error_msg)
+                else:  # Campo dinámico existe
+                    prop_matched = True
 
-        # Calcular puntuaciones parciales
-        key_score = (
-            (matched_key_fields / total_key_fields_in_expected)
-            if total_key_fields_in_expected > 0
+                if prop_matched:  # Contar para score
+                    if is_primary:
+                        matched_primary += 1
+                    elif is_secondary:
+                        matched_secondary += 1
+                    else:
+                        matched_other += 1
+
+            # Añadir WARNING si aplica (independiente de otros errores)
+            if prop_warning:
+                current_warning_msg = f"Coincidencia sensible a mayúsculas/acentos para '{prop}': esperado '{expected_value}', encontrado '{actual_value}'"
+                warnings_list.append(current_warning_msg)
+
+            # Contar totales esperados para el cálculo del score
+            if is_primary:
+                total_primary_in_expected += 1
+            elif is_secondary:
+                total_secondary_in_expected += 1
+            else:
+                total_other_in_expected += 1
+        # --- FIN DEL BUCLE DE COMPARACIÓN POR CAMPO ---
+
+        # -- Preparar conjuntos de claves para verificar faltantes y extras --
+        captured_keys = set(datalayer.keys())
+        expected_keys = set(expected_properties.keys())
+
+        # 2. Verificar CAMPOS FALTANTES (Error Crítico)
+        missing_keys = expected_keys - captured_keys
+        missing_field_errors = []
+        if missing_keys:
+            for missing_key in missing_keys:
+                missing_field_errors.append(
+                    f"Campo '{missing_key}' presente en la referencia pero AUSENTE en el DataLayer capturado"
+                )
+
+        # 3. NUEVO: Verificar CAMPOS EXTRA (Error Crítico)
+        extra_keys = captured_keys - expected_keys
+        extra_field_errors = []
+        if extra_keys:
+            # Crear mensaje de error listando los campos extra
+            extra_field_errors.append(
+                f"Campo(s) extra encontrados en DataLayer capturado no definidos en la referencia: {sorted(list(extra_keys))}"
+            )
+            logger.debug(
+                f"Campos extra detectados: {sorted(list(extra_keys))} en DL: {datalayer}"
+            )
+
+        # 4. Combinar todos los errores encontrados
+        # (Errores de valor + Errores de campos faltantes + NUEVO: Errores de campos extra)
+        errors.extend(primary_errors)
+        errors.extend(secondary_errors)
+        errors.extend(other_errors)
+        errors.extend(missing_field_errors)
+        errors.extend(
+            extra_field_errors
+        )  # Añadir errores de campos extra a la lista final
+
+        # 5. Calcular Puntuación Final (basada SOLO en coincidencias de valor de campos esperados)
+        # La presencia de errores (faltantes o extra) determinará la validez, no directamente el score.
+        primary_score = (
+            (matched_primary / total_primary_in_expected)
+            if total_primary_in_expected > 0
+            else 1.0
+        )
+        secondary_score = (
+            (matched_secondary / total_secondary_in_expected)
+            if total_secondary_in_expected > 0
             else 1.0
         )
         other_score = (
-            (matched_other_fields / total_other_fields_in_expected)
-            if total_other_fields_in_expected > 0
+            (matched_other / total_other_in_expected)
+            if total_other_in_expected > 0
             else 1.0
         )
 
-        # Penalización fuerte si 'event' (si se espera y no es dinámico) no coincide
+        # Penalización fuerte al score si el campo 'event' estático no coincide exactamente
         event_prop = "event"
         if event_prop in expected_properties and not (
             expected_properties[event_prop] is None
@@ -215,46 +293,27 @@ class DataLayerValidator:
                 and "{{" in expected_properties[event_prop]
             )
         ):
-            # Verificar no existencia o diferencia de valor normalizado
-            if (
-                event_prop not in datalayer
-                or (
-                    isinstance(datalayer.get(event_prop), str)
-                    and isinstance(expected_properties[event_prop], str)
-                    and self._normalize_string(datalayer.get(event_prop, ""))
-                    != self._normalize_string(expected_properties[event_prop])
-                )
-                or (
-                    not isinstance(datalayer.get(event_prop), str)
-                    and datalayer.get(event_prop) != expected_properties[event_prop]
-                )
-            ):
-
+            norm_event_expected = self._normalize_string(
+                expected_properties[event_prop]
+            )
+            norm_event_actual = self._normalize_string(datalayer.get(event_prop, None))
+            if norm_event_expected != norm_event_actual:
                 logger.debug(
-                    f"Penalizando score por no coincidencia en 'event' para {datalayer.get(event_prop)} vs {expected_properties[event_prop]}"
+                    f"Penalizando score (primario) por no coincidencia exacta en 'event': esperado '{norm_event_expected}', encontrado '{norm_event_actual}'"
                 )
-                key_score *= 0.1  # Aplica penalización
+                primary_score *= 0.1
 
-        # Combinar puntuaciones
-        final_score = (key_score * key_field_weight) + (
-            other_score * other_field_weight
+        final_score = (
+            (primary_score * primary_weight)
+            + (secondary_score * secondary_weight)
+            + (other_score * other_weight)
         )
+        final_score = min(max(final_score, 0.0), 1.0)  # Asegurar rango [0, 1]
+        if primary_errors and primary_score < 0.5:
+            final_score *= 0.5  # Penalización adicional
 
-        # Combinar errores
-        errors.extend(key_field_errors)
-        errors.extend(other_field_errors)
-
-        final_score = min(final_score, 1.0)  # Asegurar que no exceda 1.0
-
-        # Si hay errores graves en campos clave, podríamos reducir aún más o poner a 0
-        if (
-            key_field_errors and key_score < 0.5
-        ):  # Ejemplo: si la mitad de los clave fallan
-            final_score *= 0.5  # Reducir más el score final
-
-        final_score = max(0.0, final_score)  # Asegurar que no sea negativo
-
-        return final_score, errors
+        # Devolver score, lista COMPLETA de errores, y lista COMPLETA de warnings
+        return final_score, errors, warnings_list
 
     def _sort_reference_properties(
         self, captured_datalayer: Dict[str, Any], reference_properties: Dict[str, Any]
@@ -293,161 +352,18 @@ class DataLayerValidator:
 
         return sorted_properties
 
-    def _compare_with_reference(
-        self, captured_datalayers: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        Compara los DataLayers capturados con los DataLayers de referencia en el esquema.
-
-        Args:
-           captured_datalayers: Lista de DataLayers capturados
-
-        Returns:
-           Diccionario con información de comparación
-        """
-        comparison_results = {
-            "reference_count": 0,  # Cantidad de DataLayers en el archivo de referencia
-            "captured_count": len(
-                captured_datalayers
-            ),  # Cantidad de DataLayers capturados
-            "matched_count": 0,  # DataLayers que coinciden entre referencia y capturados
-            "missing_count": 0,  # DataLayers de referencia que no se encontraron
-            "extra_count": 0,  # DataLayers capturados que no estaban en la referencia
-            "match_details": [],  # Detalles de las coincidencias encontradas
-            "missing_details": [],  # Detalles de DataLayers faltantes
-            "extra_details": [],  # Detalles de DataLayers extra
-        }
-
-        # Obtener lista de DataLayers de referencia (propiedades de cada sección)
-        reference_datalayers = []
-        for section in self.schema.get("sections", []):
-            datalayer_props = section.get("datalayer", {}).get("properties", {})
-            if datalayer_props:
-                reference_datalayers.append(
-                    {
-                        "properties": datalayer_props,
-                        "title": section.get("title", "Unknown Section"),
-                        "id": section.get("id", "unknown_id"),
-                        "match_found": False,  # Flag para saber si se encontró coincidencia
-                    }
-                )
-
-        comparison_results["reference_count"] = len(reference_datalayers)
-
-        # Para cada DataLayer capturado, buscar coincidencia en los de referencia
-        for i, datalayer in enumerate(captured_datalayers):
-            best_match = None
-            best_match_score = 0
-            best_match_idx = -1
-
-            # Buscar el mejor match en la referencia
-            for j, ref_dl in enumerate(reference_datalayers):
-                expected_properties = ref_dl["properties"]
-                required_fields = []
-
-                # Identificar campos requeridos (esto podría mejorarse)
-                for key in expected_properties:
-                    if key in [
-                        "event",
-                        "event_category",
-                        "event_action",
-                        "event_label",
-                    ]:
-                        required_fields.append(key)
-
-                # Calcular puntuación de coincidencia
-                score, _ = self._calculate_match_score(
-                    datalayer, expected_properties, required_fields
-                )
-
-                # Si tenemos un mejor match, actualizar
-                if score > best_match_score:
-                    best_match_score = score
-                    best_match = ref_dl
-                    best_match_idx = j
-
-            # Determinar si es una coincidencia válida
-            match_threshold = self.config.get("validation", {}).get(
-                "match_threshold", 0.7
-            )
-
-            # Si encontramos una coincidencia válida
-            if best_match and best_match_score >= match_threshold:
-                comparison_results["matched_count"] += 1
-
-                # Marcar que se encontró coincidencia para este DataLayer de referencia
-                reference_datalayers[best_match_idx]["match_found"] = True
-
-                # Ordenar las propiedades de referencia para que se muestren en el mismo orden que el DataLayer capturado
-                sorted_reference_properties = self._sort_reference_properties(
-                    datalayer, best_match["properties"]
-                )
-
-                # Guardar detalles de la coincidencia
-                comparison_results["match_details"].append(
-                    {
-                        "datalayer_index": i,
-                        "reference_title": best_match["title"],
-                        "reference_id": best_match["id"],
-                        "match_score": best_match_score,
-                        "data": datalayer,
-                        "reference_data": sorted_reference_properties,  # Guardar propiedades de referencia ordenadas
-                    }
-                )
-
-                # Actualizar el detalle correspondiente en validation_results con los datos de referencia
-                for detail in self.validation_results["details"]:
-                    if detail.get("datalayer_index") == i:
-                        detail["reference_data"] = sorted_reference_properties
-                        detail["matched_section"] = best_match["title"]
-                        detail["match_score"] = best_match_score
-                        break
-
-            else:
-                # Es un DataLayer extra (no está en la referencia)
-                comparison_results["extra_count"] += 1
-                comparison_results["extra_details"].append(
-                    {"datalayer_index": i, "data": datalayer}
-                )
-
-        # Buscar DataLayers de referencia que no se encontraron
-        for ref_dl in reference_datalayers:
-            if not ref_dl["match_found"]:
-                comparison_results["missing_count"] += 1
-                comparison_results["missing_details"].append(
-                    {
-                        "reference_title": ref_dl["title"],
-                        "reference_id": ref_dl["id"],
-                        "properties": ref_dl["properties"],
-                    }
-                )
-
-        # Calcular métricas adicionales
-        if comparison_results["reference_count"] > 0:
-            comparison_results["coverage_percent"] = round(
-                (
-                    comparison_results["matched_count"]
-                    / comparison_results["reference_count"]
-                )
-                * 100,
-                1,
-            )
-        else:
-            comparison_results["coverage_percent"] = 0
-
-        return comparison_results
-
     def _filter_datalayers(
         self, captured_datalayers: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Filtra los DataLayers capturados para eliminar los que no son relevantes para la validación.
+        (Esta función ya no elimina duplicados, se asume que se hizo antes)
 
         Args:
-           captured_datalayers: Lista de DataLayers capturados
+           captured_datalayers: Lista de DataLayers capturados (ya únicos)
 
         Returns:
-           Lista filtrada de DataLayers relevantes
+           Lista filtrada de DataLayers relevantes (sin eventos GTM, etc.)
         """
         # Lista de eventos que no son relevantes para la validación
         excluded_events = [
@@ -459,39 +375,33 @@ class DataLayerValidator:
             "gtm.historyChange",
         ]
 
-        # Si no hay DataLayers, devolver la lista vacía
         if not captured_datalayers:
-            logger.warning("No se capturó ningún DataLayer")
+            logger.warning("No se recibieron DataLayers para filtrar")
             return []
 
-        # Imprimir información sobre los DataLayers capturados para depuración
-        logger.info(f"Total de DataLayers capturados: {len(captured_datalayers)}")
-        if captured_datalayers:
-            logger.info(f"Primer DataLayer: {captured_datalayers[0]}")
+        logger.info(f"Filtrando {len(captured_datalayers)} DataLayers únicos...")
 
         # Filtrar DataLayers que no son relevantes
         filtered_datalayers = []
         for dl in captured_datalayers:
-            # Verificamos si es un diccionario
             if not isinstance(dl, dict):
-                logger.warning(f"DataLayer no es un diccionario: {dl}")
+                logger.warning(f"Elemento no es un diccionario durante filtrado: {dl}")
                 continue
 
             # Si el DataLayer no tiene 'event' o su evento no está en la lista de excluidos
             if "event" not in dl or dl["event"] not in excluded_events:
-                # Incluimos DataLayers que tengan información relevante
                 filtered_datalayers.append(dl)
 
         logger.info(
-            f"DataLayers filtrados: {len(captured_datalayers)} capturados, {len(filtered_datalayers)} relevantes"
+            f"Filtrado GTM completado: {len(filtered_datalayers)} relevantes restantes."
         )
 
-        # Si después del filtrado no quedan DataLayers, devolver los originales
-        if not filtered_datalayers and captured_datalayers:
+        # Si después del filtrado no quedan DataLayers, devolver lista vacía
+        if not filtered_datalayers:
             logger.warning(
-                "El filtrado eliminó todos los DataLayers. Devolviendo los originales."
+                "El filtrado GTM eliminó todos los DataLayers. Devolviendo lista vacía."
             )
-            return captured_datalayers
+            return []
 
         return filtered_datalayers
 
@@ -501,7 +411,11 @@ class DataLayerValidator:
         expected_properties: Dict[str, Any],
         required_fields: List[str],
     ) -> List[str]:
-
+        """
+        (Función original, no modificada por los requerimientos de warnings/extras,
+         ya que _calculate_match_score ahora maneja la lógica principal de comparación)
+        Valida un datalayer específico contra las propiedades y campos requeridos.
+        """
         errors = []
 
         # Verificar campos requeridos
@@ -551,6 +465,8 @@ class DataLayerValidator:
                         f"Valor para '{prop}' no coincide: esperado '{expected_value}', encontrado '{actual_value}'"
                     )
             elif prop in required_fields:
+                # Este caso ya debería estar cubierto por la verificación de campos requeridos,
+                # pero lo dejamos por redundancia.
                 errors.append(f"Propiedad requerida '{prop}' no encontrada")
 
         return errors
@@ -603,173 +519,349 @@ class DataLayerValidator:
 
         return cleaned
 
-    def interactive_validation(self) -> Dict[str, Any]:
+    def _handle_navigation(self, frame: Frame):
         try:
-            original_headless = self.headless
-            self.headless = False
-            self.setup_driver()
+            if frame.parent_frame:
+                return
+            new_url = frame.url
+            if (
+                not new_url
+                or new_url.startswith("about:")
+                or new_url.startswith("chrome-error://")
+            ):
+                return
+            if not hasattr(self, "original_interactive_url"):
+                return
+
+            original_domain = urlparse(self.original_interactive_url).netloc
+            new_domain = urlparse(new_url).netloc
+            if new_domain == original_domain:
+                return
+
+            if not self.external_navigation_detected:
+                warning_message = (
+                    f"⚠️ ¡ADVERTENCIA DE NAVEGACIÓN! Se detectó salida a un dominio externo.\n"
+                    f"   - Dominio Original: {original_domain}\n"
+                    f"   - Nuevo Dominio:    {new_domain} ({new_url})\n"
+                    f"   - (La captura continuará si vuelves al dominio original gracias a localStorage)."
+                )
+                print(f"\n{warning_message}\n")
+                logger.warning(
+                    f"Navegación externa detectada de {original_domain} a {new_domain}"
+                )
+                self.external_navigation_detected = True
+        except Exception as e:
+            logger.error(f"Error en _handle_navigation: {e}", exc_info=False)
+
+    # --- Función _compare_with_reference MODIFICADA ---
+    def _compare_with_reference(
+        self, captured_datalayers: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Compara la lista de DataLayers capturados con las referencias del esquema.
+        Calcula coincidencias, referencias faltantes.
+        """
+        comparison_results = {
+            "reference_count": 0,
+            "captured_count": len(captured_datalayers),
+            "matched_count": 0,
+            "missing_count": 0,
+            "missing_details": [],
+            "coverage_percent": 0.0,
+        }
+        reference_datalayers = []
+        if self.schema and "sections" in self.schema:
+            for idx, section in enumerate(self.schema["sections"]):
+                datalayer_section = section.get("datalayer", {})
+                properties = datalayer_section.get("properties")
+                if properties:
+                    reference_datalayers.append(
+                        {
+                            "properties": properties,
+                            "title": section.get("title", f"Sección sin título {idx}"),
+                            "id": section.get("id", f"no_id_{idx}"),
+                            "required_fields": datalayer_section.get(
+                                "required_fields", []
+                            ),
+                            "match_found": False,  # Flag para rastrear si esta referencia fue encontrada
+                        }
+                    )
+        comparison_results["reference_count"] = len(reference_datalayers)
+        match_threshold = self.config.get("validation", {}).get("match_threshold", 0.7)
+
+        # Iterar sobre los capturados para marcar las referencias encontradas
+        for i, captured_dl in enumerate(captured_datalayers):
+            best_match_score = -1.0
+            best_match_ref_idx = -1
+            # No necesitamos warnings aquí, solo el score para marcar el match
+            for j, ref_dl in enumerate(reference_datalayers):
+                # Usamos la nueva firma de _calculate_match_score, pero ignoramos errors/warnings aquí
+                score, _, _ = self._calculate_match_score(
+                    captured_dl, ref_dl["properties"], ref_dl.get("required_fields", [])
+                )
+                if score > best_match_score:
+                    best_match_score = score
+                    best_match_ref_idx = j
+
+            # Si se encontró un match válido para este capturado, marcar la referencia correspondiente
+            if best_match_ref_idx != -1 and best_match_score >= match_threshold:
+                # Marcar la referencia como encontrada (solo la primera vez que se encuentra)
+                if not reference_datalayers[best_match_ref_idx]["match_found"]:
+                    reference_datalayers[best_match_ref_idx]["match_found"] = True
+
+        # Contar referencias encontradas y faltantes
+        final_missing_count = 0
+        final_matched_count = 0  # Contaremos las referencias que sí se encontraron
+        comparison_results["missing_details"] = []
+        for idx, ref_dl in enumerate(reference_datalayers):
+            if ref_dl["match_found"]:
+                final_matched_count += 1
+            else:
+                final_missing_count += 1
+                comparison_results["missing_details"].append(
+                    {
+                        "reference_title": ref_dl["title"],
+                        "reference_id": ref_dl["id"],
+                        "properties": ref_dl["properties"],
+                    }
+                )
+        comparison_results["matched_count"] = (
+            final_matched_count  # Basado en referencias únicas encontradas
+        )
+        comparison_results["missing_count"] = final_missing_count
+
+        # Calcular cobertura
+        if comparison_results["reference_count"] > 0:
+            # La cobertura se basa en cuántas referencias únicas se encontraron
+            comparison_results["coverage_percent"] = round(
+                (final_matched_count / comparison_results["reference_count"]) * 100,
+                1,
+            )
+        else:
+            comparison_results["coverage_percent"] = 0.0
+
+        # logger.debug(f"Resultados comparación final: {comparison_results}") # Log quitado
+        return comparison_results
+
+    def interactive_validation(self) -> Dict[str, Any]:
+        """
+        Realiza la validación en modo interactivo, capturando DataLayers
+        desde localStorage y comparándolos con el esquema.
+        Incluye warnings por tiempo, por coincidencias sensibles a mayúsculas/acentos,
+        y marca los DataLayers sin coincidencia clara con un warning.
+        Calcula el resumen basado en DataLayers únicos.
+        """
+        self.external_navigation_detected = False
+        self.original_interactive_url = self.url
+        original_headless = self.headless  # Guardar estado original
+
+        try:
+            self.headless = False  # Forzar modo visible para interacción
+            self.setup_driver()  # Llama a setup_driver aquí
+
+            # --- Script de inicialización para captura en localStorage (sin cambios) ---
+            init_script = (
+                """
+                (() => {
+                    const LS_KEY = '"""
+                + LOCAL_STORAGE_KEY
+                + """'; let capturedList = [];
+                    try { const existingData = localStorage.getItem(LS_KEY); if (existingData) { capturedList = JSON.parse(existingData); if (!Array.isArray(capturedList)) capturedList = []; } } catch (e) { console.error('Error reading initial LS:', e); capturedList = []; }
+                    window.dataLayer = window.dataLayer || []; const originalPush = window.dataLayer.push; let initialItemsProcessed = false;
+                    // Procesar items iniciales si existen y no tienen timestamp
+                    if (Array.isArray(window.dataLayer) && window.dataLayer.length > 0) { const initialTimestamp = Date.now(); let addedFromInitial = 0; for (const obj of window.dataLayer) { if (typeof obj === 'object' && obj !== null && typeof obj._captureTimestamp === 'undefined') { try { capturedList.push({ ...JSON.parse(JSON.stringify(obj)), _captureTimestamp: initialTimestamp }); addedFromInitial++; } catch (e) { console.error('Error cloning initial DL:', e, obj); } } else if ((typeof obj !== 'object' || obj === null) && typeof obj?._captureTimestamp === 'undefined') { capturedList.push({ nonObjectData: obj, _captureTimestamp: initialTimestamp }); addedFromInitial++; } } if(addedFromInitial > 0) { console.log('Processed ' + addedFromInitial + ' initial items.'); initialItemsProcessed = true; } }
+                    // Guardar si se procesaron items iniciales
+                    if(initialItemsProcessed) { try { localStorage.setItem(LS_KEY, JSON.stringify(capturedList)); } catch (e) { console.error('Error saving initial DLs to LS:', e); } }
+                    // Sobreescribir dataLayer.push
+                    window.dataLayer.push = function(...args) {
+                        const timestamp = Date.now(); let currentCapturedList = [];
+                        // Recargar desde LS por si se navegó externamente y se volvió
+                        try { currentCapturedList = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); if (!Array.isArray(currentCapturedList)) currentCapturedList = []; } catch(e) { console.error('Error reloading LS:', e); currentCapturedList = []; }
+                        let itemsPushedCount = 0;
+                        for (const obj of args) { if (typeof obj === 'object' && obj !== null) { try { currentCapturedList.push({ ...JSON.parse(JSON.stringify(obj)), _captureTimestamp: timestamp }); itemsPushedCount++; } catch (e) { console.error('Error cloning/pushing DL:', e, obj); } } else { currentCapturedList.push({ nonObjectData: obj, _captureTimestamp: timestamp }); itemsPushedCount++; } }
+                        if (itemsPushedCount > 0) { try { localStorage.setItem(LS_KEY, JSON.stringify(currentCapturedList)); } catch (e) { console.error('Error saving DLs to LS:', e); } }
+                        return originalPush.apply(window.dataLayer, args); // Llamar al push original
+                    }; console.log('DataLayer LS capture init. Key: ' + LS_KEY + '. Items in LS: ' + capturedList.length);
+                })();
+                """
+            )
+            self.page.add_init_script(init_script)
 
             logger.info(f"Navegando a URL inicial: {self.url}")
             self.page.goto(self.url)
             try:
-                # Espera a que la red esté inactiva o hasta 5 segundos
-                self.page.wait_for_load_state("networkidle", timeout=5000)
-            except PlaywrightTimeoutError:
-                logger.warning(
-                    "Timeout esperando networkidle, la página puede no estar completamente cargada."
-                )
+                self.page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
-                logger.warning(f"Error inesperado durante wait_for_load_state: {e}")
+                logger.warning(f"Timeout/error en networkidle inicial: {e}")
 
-            original_url = self.page.url
-            logger.info(f"URL base para la validación: {original_url}")
+            self.original_interactive_url = self.page.url
+            logger.info(f"URL base establecida: {self.original_interactive_url}")
 
-            monitor_script = """
-            window.allDataLayers = [];
-            if (typeof window.dataLayer !== 'undefined') {
-                if (Array.isArray(window.dataLayer)) {
-                    for (var i = 0; i < window.dataLayer.length; i++) {
-                        try {
-                            window.allDataLayers.push(Object.assign({}, window.dataLayer[i]));
-                        } catch (e) {
-                            console.error('Error al copiar dataLayer existente:', e);
-                        }
-                    }
-                    console.log('Captured ' + window.dataLayer.length + ' existing dataLayer items');
-                }
-            } else {
-                window.dataLayer = [];
-                console.log('Created new dataLayer');
-            }
-            var originalPush = Array.prototype.push;
-            window.dataLayer.push = function() {
-                for (var i = 0; i < arguments.length; i++) {
-                    var obj = arguments[i];
-                    try {
-                        var copy = Object.assign({}, obj);
-                        window.allDataLayers.push(copy);
-                        console.log('DataLayer captured:', copy);
-                    } catch (e) {
-                        console.error('Error capturing dataLayer:', e);
-                    }
-                }
-                return originalPush.apply(this, arguments);
-            };
-            console.log('DataLayer monitoring initialized. Total captures:', window.allDataLayers.length);
-            window.inspectDataLayers = function() {
-                console.table(window.allDataLayers);
-                return window.allDataLayers;
-            };
-            """
-            self.page.evaluate(monitor_script)
+            self.page.on("framenavigated", self._handle_navigation)
 
             print("\n=== MODO INTERACTIVO DE VALIDACIÓN ===")
-            print(f"Se ha abierto el navegador para validar: {original_url}")
+            print(f"Navegador abierto para: {self.original_interactive_url}")
             print("Instrucciones:")
-            print("1. Navega por el sitio y realiza las acciones que desees probar.")
-            print("2. Los DataLayers se capturarán automáticamente mientras navegas.")
+            print("1. Interactúa con el sitio.")
+            print("2. Los DataLayers se guardarán en localStorage.")
             print(
-                "3. Si deseas verificar los DataLayers capturados, ejecuta esto en la consola del navegador:"
+                f"3. Verifica en consola JS: console.log(JSON.parse(localStorage.getItem('{LOCAL_STORAGE_KEY}')))"
             )
-            print("   window.inspectDataLayers()")
-            print(
-                "4. Cuando termines, presiona ENTER en esta terminal para procesar los resultados."
-            )
-            input(
-                "\nPresiona ENTER cuando hayas terminado de interactuar con el sitio..."
-            )
+            print("4. Presiona ENTER aquí para finalizar y procesar.")
 
-            current_url = self.page.url
-            logger.info(f"URL actual al finalizar interacción: {current_url}")
-            if original_url != current_url:
-                warning_message = f"Se detectó una navegación/redirección desde la URL base '{original_url}' a '{current_url}'. Los DataLayers finales se capturaron desde esta última URL."
-                logger.warning(warning_message)
-                print(f"\n⚠️ ADVERTENCIA: {warning_message}")
-                if "warnings" not in self.validation_results:
-                    self.validation_results["warnings"] = []
-                if warning_message not in self.validation_results["warnings"]:
-                    self.validation_results["warnings"].append(warning_message)
+            input("\nPresiona ENTER para finalizar...")
 
-            time.sleep(1)
-
-            captured_datalayers = []
+            captured_datalayers_raw = []
             try:
-                captured_datalayers = self.page.evaluate("window.allDataLayers || [];")
                 logger.info(
-                    f"Capturados {len(captured_datalayers)} DataLayers desde window.allDataLayers (URL final: {current_url})"
+                    f"Recuperando DataLayers desde localStorage (key: {LOCAL_STORAGE_KEY})..."
                 )
-                if not captured_datalayers or len(captured_datalayers) == 0:
-                    direct_layers = self.page.evaluate(
-                        """
-                    if (typeof window.dataLayer !== 'undefined') {
-                        return Array.isArray(window.dataLayer) ? window.dataLayer.slice(0) : [window.dataLayer];
-                    } else {
-                        return [];
-                    }
-                    """
+                self.page.wait_for_timeout(250)  # Pequeña espera por si acaso
+                ls_data_str = self.page.evaluate(
+                    f"localStorage.getItem('{LOCAL_STORAGE_KEY}')"
+                )
+                if ls_data_str:
+                    captured_datalayers_raw = json.loads(ls_data_str)
+                    if not isinstance(captured_datalayers_raw, list):
+                        captured_datalayers_raw = []
+                    logger.info(
+                        f"Éxito: {len(captured_datalayers_raw)} DLs recuperados de localStorage."
                     )
-                    if direct_layers and len(direct_layers) > 0:
-                        captured_datalayers = direct_layers
-                        logger.info(
-                            f"Capturados {len(direct_layers)} DataLayers directamente de window.dataLayer"
-                        )
-
+                else:
+                    logger.warning("No se encontraron datos en localStorage.")
+                    captured_datalayers_raw = []
             except Exception as e:
-                logger.error(f"Error al capturar DataLayers desde {current_url}: {e}")
-                captured_datalayers = []
+                logger.error(
+                    f"Fallo al recuperar/parsear DLs de localStorage: {e}",
+                    exc_info=True,
+                )
+                captured_datalayers_raw = []
 
+            try:
+                self.page.remove_listener("framenavigated", self._handle_navigation)
+            except Exception as e:
+                logger.warning(f"No se pudo remover listener 'framenavigated': {e}")
+
+            logger.info(f"Procesando {len(captured_datalayers_raw)} DLs obtenidos.")
+
+            # 1. Deduplicación
+            processed_datalayers_unique = []
+            seen_datalayers_repr = set()
+            original_count = len(captured_datalayers_raw)
+            logger.info(f"Eliminando duplicados de {original_count} DLs...")
+            for dl in captured_datalayers_raw:
+                dl_copy_for_dedup = (
+                    {k: v for k, v in dl.items() if k != "_captureTimestamp"}
+                    if isinstance(dl, dict)
+                    else dl
+                )
+                try:
+                    dl_representation = json.dumps(
+                        dl_copy_for_dedup, sort_keys=True, ensure_ascii=False
+                    )
+                    if dl_representation not in seen_datalayers_repr:
+                        seen_datalayers_repr.add(dl_representation)
+                        processed_datalayers_unique.append(dl)
+                except TypeError as e:
+                    logger.warning(
+                        f"No se pudo serializar DL para deduplicación: {dl} - Error: {e}. Se incluirá."
+                    )
+                    processed_datalayers_unique.append(dl)
+
+            unique_count = len(processed_datalayers_unique)
             logger.info(
-                f"Se han capturado {len(captured_datalayers)} DataLayers en modo interactivo."
+                f"Deduplicación completa. Originales: {original_count}, Únicos: {unique_count}"
             )
 
-            # --- Aquí irá el código para filtrar duplicados (Punto 2) ---
-            # Pendiente de implementar en el siguiente paso
-
-            filtered_datalayers = self._filter_datalayers(captured_datalayers)
+            # 2. Cálculo de Warnings de Tiempo (SOBRE LISTA ÚNICA)
             logger.info(
-                f"DataLayers relevantes para validación: {len(filtered_datalayers)}"
+                f"Calculando warnings de tiempo para {unique_count} DLs únicos..."
+            )
+            time_threshold = self.config.get("validation", {}).get(
+                "warning_time_threshold_ms", 500
+            )
+            previous_timestamp = None
+            time_warnings_map = {}
+            for i, datalayer_with_ts in enumerate(processed_datalayers_unique):
+                current_timestamp = datalayer_with_ts.get("_captureTimestamp")
+                time_warnings_for_this_dl = []
+                if i > 0 and previous_timestamp and current_timestamp:
+                    time_diff = current_timestamp - previous_timestamp
+                    if time_diff < time_threshold:
+                        warning_msg = f"Evento rápido: Ocurrió {time_diff} ms después del DataLayer anterior (umbral: {time_threshold} ms)."
+                        time_warnings_for_this_dl.append(warning_msg)
+                if time_warnings_for_this_dl:
+                    time_warnings_map[i] = time_warnings_for_this_dl
+                previous_timestamp = current_timestamp
+            logger.info(
+                f"Se encontraron warnings de tiempo para {len(time_warnings_map)} DLs."
             )
 
-            if not filtered_datalayers:
+            # 3. Filtrado de Eventos GTM (SOBRE LISTA ÚNICA)
+            captured_datalayers_final = self._filter_datalayers(
+                processed_datalayers_unique
+            )
+            relevant_count = len(captured_datalayers_final)
+            logger.info(f"DLs relevantes (únicos y sin GTM): {relevant_count}")
+            original_indices_map = {
+                id(dl): idx for idx, dl in enumerate(processed_datalayers_unique)
+            }
+
+            if not captured_datalayers_final:
                 self.validation_results["valid"] = False
-                self.validation_results["errors"].append(
-                    "No se encontraron DataLayers relevantes para validación"
-                )
-                print(
-                    "\n⚠️ ADVERTENCIA: No se detectaron DataLayers relevantes para validación."
-                )
+                error_msg = "No se encontraron DataLayers relevantes para validar después del filtrado."
+                self.validation_results["errors"].append(error_msg)
+                self.validation_results["warnings"].append(error_msg)
+                logger.error(error_msg)
                 return self.validation_results
 
             print(
-                f"\nSe capturaron {len(captured_datalayers)} DataLayers (incluyendo posibles duplicados y eventos GTM)."
+                f"\nCapturados (brutos): {original_count}. Únicos: {unique_count}. Relevantes (sin GTM): {relevant_count}."
             )
-            print(
-                f"De los cuales {len(filtered_datalayers)} son relevantes para validación."
-            )
-
-            captured_datalayers = (
-                filtered_datalayers  # Usar la lista filtrada para la validación
-            )
-
-            if captured_datalayers and len(captured_datalayers) > 0:
-                print("\nEjemplo del primer DataLayer relevante capturado:")
+            if captured_datalayers_final:
+                print("\nPrimer DL relevante:")
                 try:
-                    first_dl = captured_datalayers[0]
-                    pretty_json = json.dumps(first_dl, indent=2, ensure_ascii=False)
-                    print(pretty_json)
+                    first_dl_display = {
+                        k: v
+                        for k, v in captured_datalayers_final[0].items()
+                        if k != "_captureTimestamp"
+                    }
+                    print(json.dumps(first_dl_display, indent=2, ensure_ascii=False))
                 except Exception as e:
-                    print(f"[Error al mostrar el ejemplo: {str(e)}]")
+                    print(f"[Error al mostrar ejemplo: {str(e)}]")
 
+            # 4. Validación y Combinación de Warnings (Iterando sobre lista final filtrada)
             self.validation_results["summary"]["total_sections"] = len(
                 self.schema.get("sections", [])
             )
-            self.validation_results["summary"]["not_found_sections"] = (
-                self.validation_results["summary"]["total_sections"]
+            self.validation_results["details"] = []
+            # QUITAR contadores inmediatos: valid_count_details = 0
+            # QUITAR contadores inmediatos: invalid_count_details = 0
+            match_threshold = self.config.get("validation", {}).get(
+                "match_threshold", 0.7
             )
 
-            for i, datalayer in enumerate(captured_datalayers):
-                best_match_section = None
-                best_match_score = 0
+            logger.info(
+                f"Iniciando validación final para {relevant_count} DLs relevantes..."
+            )
+
+            for i, datalayer_with_ts in enumerate(captured_datalayers_final):
+                original_index = original_indices_map.get(id(datalayer_with_ts))
+                time_warnings = (
+                    time_warnings_map.get(original_index, [])
+                    if original_index is not None
+                    else []
+                )
+                datalayer = {
+                    k: v
+                    for k, v in datalayer_with_ts.items()
+                    if k != "_captureTimestamp"
+                }
+                current_timestamp = datalayer_with_ts.get("_captureTimestamp")
+                combined_warnings = list(time_warnings)
+                match_warnings = []
+                best_match_section_info = None
+                best_match_score = -1.0
                 matched_errors = []
 
                 for section in self.schema.get("sections", []):
@@ -781,149 +873,293 @@ class DataLayerValidator:
                     )
                     if not expected_properties:
                         continue
-
-                    score, errors = self._calculate_match_score(
-                        datalayer, expected_properties, required_fields
+                    score, errors_for_this_match, warnings_for_this_match = (
+                        self._calculate_match_score(
+                            datalayer, expected_properties, required_fields
+                        )
                     )
                     if score > best_match_score:
                         best_match_score = score
-                        best_match_section = section
-                        matched_errors = errors
+                        best_match_section_info = {
+                            "title": section.get("title", "Unknown Section"),
+                            "properties": expected_properties,
+                            "id": section.get("id"),
+                        }
+                        matched_errors = errors_for_this_match
+                        match_warnings = warnings_for_this_match
 
-                match_threshold = self.config.get("validation", {}).get(
-                    "match_threshold", 0.7
-                )
-                is_valid_match = best_match_score >= match_threshold
+                combined_warnings.extend(match_warnings)
 
-                if is_valid_match and best_match_section:
-                    # Esta lógica de actualizar el resumen basado en matches se moverá
-                    # a la función _compare_with_reference más adelante.
-                    # Por ahora la dejamos comentada para evitar doble conteo.
-                    # if self.validation_results["summary"]["not_found_sections"] > 0:
-                    #    self.validation_results["summary"]["not_found_sections"] -= 1
-                    # if len(matched_errors) == 0:
-                    #    self.validation_results["summary"]["valid_sections"] += 1
-                    # else:
-                    #    self.validation_results["summary"]["invalid_sections"] += 1
-                    pass
+                detail_is_valid = None
+                if best_match_score >= match_threshold:
+                    if not matched_errors:
+                        detail_is_valid = True
+                        # QUITAR: valid_count_details += 1
+                    else:
+                        detail_is_valid = False
+                        # QUITAR: invalid_count_details += 1
+                else:
+                    warning_msg = f"DataLayer no coincide con ninguna referencia conocida (Mejor score: {best_match_score*100:.1f}%)"
+                    combined_warnings.append(warning_msg)
+                    logger.debug(
+                        f"DL {i} marcado como no coincidente (warning añadido)."
+                    )
 
                 detail = {
                     "datalayer_index": i,
                     "data": datalayer,
-                    "valid": is_valid_match and len(matched_errors) == 0,
-                    "errors": matched_errors,
+                    "valid": detail_is_valid,
+                    "errors": matched_errors if detail_is_valid is False else [],
+                    "warnings": combined_warnings,
                     "source": "interactive",
+                    "matched_section_id": (
+                        best_match_section_info["id"]
+                        if best_match_section_info
+                        and best_match_score >= match_threshold
+                        else None
+                    ),
+                    "matched_section": (
+                        best_match_section_info["title"]
+                        if best_match_section_info
+                        and best_match_score >= match_threshold
+                        else None
+                    ),
+                    "match_score": (
+                        best_match_score if best_match_section_info else None
+                    ),
+                    "reference_data": (
+                        self._sort_reference_properties(
+                            datalayer, best_match_section_info["properties"]
+                        )
+                        if best_match_section_info
+                        and best_match_score >= match_threshold
+                        else None
+                    ),
+                    "_captureTimestamp": current_timestamp,
                 }
-                if best_match_section:
-                    detail["matched_section"] = best_match_section.get(
-                        "title", "Unknown Section"
-                    )
-                    detail["match_score"] = best_match_score
-
                 self.validation_results["details"].append(detail)
 
-                if i % 10 == 0 and i > 0:
-                    print(f"Procesados {i} de {len(captured_datalayers)} DataLayers...")
+                if i > 0 and (i + 1) % 10 == 0:
+                    print(f"Procesados {i + 1}/{relevant_count} DLs...")
 
-            # La validez global y el resumen final se calcularán mejor después de la comparación
-            # self.validation_results["valid"] = (
-            #    self.validation_results["summary"]["valid_sections"] > 0
-            # )
+            # 5. NUEVO: Calcular Resumen de Únicos
+            logger.info("Calculando resumen de DataLayers únicos...")
+            unique_valid_matches_set = set()
+            unique_invalid_matches_set = set()
+            unique_warning_items_set = set()
+            unique_unmatched_set = set()
+            # Almacenar representaciones para depuración si es necesario
+            # debug_identifiers = {}
+
+            for detail in self.validation_results["details"]:
+                unique_identifier = None
+                # Usar ID de sección como identificador si hubo match válido o inválido
+                if detail["matched_section_id"] and detail["valid"] is not None:
+                    unique_identifier = f"ref_{detail['matched_section_id']}"
+                else:  # Si no hubo match claro (valid es None)
+                    # Usar hash del contenido del datalayer como identificador
+                    try:
+                        # Ordenar claves para consistencia del hash
+                        dl_string = json.dumps(
+                            detail["data"], sort_keys=True, ensure_ascii=False
+                        )
+                        unique_identifier = f"dl_{hashlib.sha1(dl_string.encode('utf-8')).hexdigest()[:16]}"  # Hash más largo
+                    except Exception as hash_err:
+                        logger.error(
+                            f"Error generando hash para DL {detail['datalayer_index']}: {hash_err}"
+                        )
+                        unique_identifier = (
+                            f"dl_error_{detail['datalayer_index']}"  # Fallback
+                        )
+
+                # debug_identifiers[detail['datalayer_index']] = unique_identifier # Para depuración
+
+                # Contar categorías únicas
+                if detail["valid"] is True:
+                    unique_valid_matches_set.add(unique_identifier)
+                elif detail["valid"] is False:
+                    unique_invalid_matches_set.add(unique_identifier)
+                # El caso detail["valid"] is None (no match claro) se cuenta indirectamente
+                # al comparar el total con válidos+inválidos, o podemos contarlo explícitamente:
+                elif detail["valid"] is None:
+                    unique_unmatched_set.add(unique_identifier)
+
+                # Contar items únicos CON warnings (independiente de validez)
+                if detail["warnings"]:
+                    unique_warning_items_set.add(unique_identifier)
+
+            unique_valid_count = len(unique_valid_matches_set)
+            unique_invalid_count = len(unique_invalid_matches_set)
+            unique_warning_count = len(unique_warning_items_set)
+            unique_unmatched_count = len(unique_unmatched_set)
+            # El total único debe considerar todas las categorías identificadas
+            total_unique_identified = len(
+                unique_valid_matches_set
+                | unique_invalid_matches_set
+                | unique_unmatched_set
+            )
 
             logger.info(
-                "Comparando DataLayers relevantes capturados con la referencia..."
+                f"Recuento Único - Válidos: {unique_valid_count}, Inválidos: {unique_invalid_count}, Con Warnings: {unique_warning_count}, No Coincidentes: {unique_unmatched_count}, Total Únicos: {total_unique_identified}"
             )
-            comparison_results = self._compare_with_reference(captured_datalayers)
+            # print(f"DEBUG Identifiers: {debug_identifiers}") # Descomentar para depurar identificadores
+
+            # Actualizar el diccionario summary con los recuentos únicos
+            self.validation_results["summary"][
+                "unique_valid_matches"
+            ] = unique_valid_count
+            self.validation_results["summary"][
+                "unique_invalid_matches"
+            ] = unique_invalid_count
+            self.validation_results["summary"][
+                "unique_datalayers_with_warnings"
+            ] = unique_warning_count
+            self.validation_results["summary"][
+                "unique_unmatched_datalayers"
+            ] = unique_unmatched_count
+            self.validation_results["summary"][
+                "total_unique_captured_relevant"
+            ] = total_unique_identified
+
+            logger.info("Calculando resultados finales de comparación...")
+            datalayers_for_comparison = [
+                {k: v for k, v in d.items() if k != "_captureTimestamp"}
+                for d in captured_datalayers_final
+            ]
+            comparison_results = self._compare_with_reference(datalayers_for_comparison)
             self.validation_results["comparison"] = comparison_results
+            missing_count_final = comparison_results.get("missing_count", 0)
+            matched_count_final = comparison_results.get("matched_count", 0)
+            # Actualizar not_found_sections con el resultado de la comparación
+            self.validation_results["summary"][
+                "not_found_sections"
+            ] = missing_count_final
 
-            # Actualizar el resumen basado en la comparación
-            self.validation_results["summary"]["matched_count"] = (
-                comparison_results.get("matched_count", 0)
-            )
-            self.validation_results["summary"]["missing_count"] = (
-                comparison_results.get("missing_count", 0)
-            )
-            self.validation_results["summary"]["extra_count"] = comparison_results.get(
-                "extra_count", 0
-            )
-            # Recalcular valid/invalid/not_found basado en la comparación para mayor precisión
-            valid_count_comp = 0
-            invalid_count_comp = 0
-            # Iterar sobre los detalles de match_details para contar válidos/inválidos
-            for match_detail in comparison_results.get("match_details", []):
-                detail_index = match_detail.get("datalayer_index")
-                # Buscar el detalle original para ver sus errores
-                original_detail = next(
-                    (
-                        d
-                        for d in self.validation_results["details"]
-                        if d.get("datalayer_index") == detail_index
-                    ),
-                    None,
-                )
-                if original_detail and not original_detail.get("errors"):
-                    valid_count_comp += 1
-                elif original_detail:
-                    invalid_count_comp += 1
-
-            self.validation_results["summary"]["valid_sections"] = valid_count_comp
-            self.validation_results["summary"]["invalid_sections"] = invalid_count_comp
-            self.validation_results["summary"]["not_found_sections"] = (
-                comparison_results.get("missing_count", 0)
-            )  # Los no encontrados son los faltantes
+            # 7. Determinar validez general final: Inválido si hay matches únicos inválidos O si faltan referencias
             self.validation_results["valid"] = (
-                invalid_count_comp == 0
-                and comparison_results.get("missing_count", 0) == 0
-            )  # Válido si no hay inválidos ni faltantes
+                unique_invalid_count == 0 and missing_count_final == 0
+            )
 
-            print("\n=== Comparación con DataLayers de Referencia ===")
+            # Imprimir resumen final en consola usando los contadores ÚNICOS
+            print("\n=== Resumen Final (Consola - Basado en Únicos) ===")
             print(
-                f"DataLayers en archivo de referencia: {comparison_results.get('reference_count', 0)}"
+                f"Referencias Totales: {comparison_results.get('reference_count', 0)}"
             )
             print(
-                f"DataLayers capturados (relevantes): {comparison_results.get('captured_count', 0)}"
-            )
+                f"Capturados Relevantes (Total): {relevant_count}"
+            )  # Total de items procesados
             print(
-                f"Coincidencias encontradas: {comparison_results.get('matched_count', 0)}"
-            )
-            print(f" - Válidos: {valid_count_comp}")
-            print(f" - Inválidos: {invalid_count_comp}")
+                f"Capturados Relevantes (Únicos Identificados): {total_unique_identified}"
+            )  # Total de items únicos
             print(
-                f"DataLayers de referencia no encontrados: {comparison_results.get('missing_count', 0)}"
-            )
+                f"  - Matches Válidos Únicos: {unique_valid_count}"
+            )  # Items únicos que coincidieron sin error
             print(
-                f"DataLayers capturados extra: {comparison_results.get('extra_count', 0)}"
-            )
+                f"  - Matches Inválidos Únicos: {unique_invalid_count}"
+            )  # Items únicos que coincidieron CON error
             print(
-                f"Cobertura (% de referencia encontrados): {comparison_results.get('coverage_percent', 0.0)}%"
+                f"  - DLs Únicos No Coincidentes (antes 'Extra'): {unique_unmatched_count}"
+            )  # Items únicos sin match claro
+            print(
+                f"  - DLs Únicos Con Warnings (cualquier tipo): {unique_warning_count}"
+            )  # Items únicos con al menos un warning
+            print(
+                f"Referencias No Encontradas: {missing_count_final}"
+            )  # Referencias que no tuvieron match
+            print(
+                f"Cobertura (% referencias encontradas): {comparison_results.get('coverage_percent', 0.0):.1f}%"
             )
 
             return self.validation_results
 
         except Exception as e:
             logger.error(
-                f"Error durante la validación interactiva: {str(e)}", exc_info=True
+                f"Error durante validación interactiva: {str(e)}", exc_info=True
             )
             self.validation_results["valid"] = False
-            self.validation_results["errors"].append(
-                f"Error de validación interactiva: {str(e)}"
-            )
+            self.validation_results["errors"].append(f"Error validación: {str(e)}")
+            if not isinstance(self.validation_results.get("warnings"), list):
+                self.validation_results["warnings"] = []
+            self.validation_results["warnings"].append(f"Error General: {str(e)}")
             return self.validation_results
-
         finally:
             self.headless = original_headless
+            if hasattr(self, "page") and self.page and not self.page.is_closed():
+                try:
+                    self.page.remove_listener("framenavigated", self._handle_navigation)
+                except Exception:
+                    pass
+                try:
+                    self.page.evaluate(
+                        f"localStorage.removeItem('{LOCAL_STORAGE_KEY}')"
+                    )
+                    logger.info(f"LocalStorage limpiado (key: {LOCAL_STORAGE_KEY}).")
+                except Exception as ls_clean_err:
+                    logger.warning(
+                        f"No se pudo limpiar localStorage al final: {ls_clean_err}"
+                    )
             if hasattr(self, "browser") and self.browser:
                 try:
                     self.browser.close()
-                    if hasattr(self, "playwright"):
-                        self.playwright.stop()
-                    logger.info("Navegador cerrado correctamente")
+                    logger.info("Navegador cerrado.")
                 except Exception as close_err:
-                    logger.error(f"Error al cerrar el navegador: {close_err}")
+                    logger.error(f"Error al cerrar navegador: {close_err}")
+            if hasattr(self, "playwright"):
+                try:
+                    self.playwright.stop()
+                except Exception as stop_err:
+                    logger.error(f"Error al detener playwright: {stop_err}")
+
+    # --- FIN Función interactive_validation MODIFICADA ---
+
+    def validate_all_sections(self) -> Dict[str, Any]:
+        # ... (código sin cambios) ...
+        try:
+            self.setup_driver()
+            logger.info(f"Navegando a URL inicial: {self.url}")
+            self.page.goto(self.url)
+            timeout = self.config.get("browser", {}).get("wait_timeout", 10) * 1000
+            self.page.wait_for_selector("body", timeout=timeout)
+            sections = self.schema.get("sections", [])
+            total_sections = len(sections)
+            logger.info(f"Validando {total_sections} secciones")
+            self.validation_results["summary"]["total_sections"] = total_sections
+            self.validation_results["summary"]["not_found_sections"] = total_sections
+            self.validation_results["valid"] = False
+            logger.warning(
+                "Modo automático no implementado completamente. Use --interactive."
+            )
+            self.validation_results["warnings"].append(
+                "Modo automático no implementado completamente."
+            )
+            return self.validation_results
+        except Exception as e:
+            logger.error(f"Error durante la validación: {str(e)}", exc_info=True)
+            self.validation_results["valid"] = False
+            self.validation_results["errors"].append(f"Error de validación: {str(e)}")
+            return self.validation_results
+        finally:
+            if hasattr(self, "browser") and self.browser:
+                try:
+                    self.browser.close()
+                    logger.info(
+                        "Navegador cerrado correctamente (validate_all_sections)"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error cerrando navegador en validate_all_sections: {e}"
+                    )
+            if hasattr(self, "playwright"):
+                try:
+                    self.playwright.stop()
+                except Exception as e:
+                    logger.error(
+                        f"Error deteniendo playwright en validate_all_sections: {e}"
+                    )
 
     def validate_all_sections(self) -> Dict[str, Any]:
         """
-        Valida todas las secciones del esquema.
+        Valida todas las secciones del esquema. (Función no modificada)
 
         Returns:
            Resultados completos de la validación
@@ -950,8 +1186,19 @@ class DataLayerValidator:
             self.validation_results["summary"]["total_sections"] = total_sections
 
             # Validar cada sección (método abreviado ya que usaremos principalmente el interactivo)
+            # Esta parte necesitaría una implementación más robusta si se usara el modo automático.
+            # Por ahora, simplemente marcamos todo como no encontrado si no es modo interactivo.
             self.validation_results["summary"]["not_found_sections"] = total_sections
-            self.validation_results["valid"] = False
+            self.validation_results["valid"] = (
+                False  # Asumimos inválido si no es interactivo
+            )
+
+            logger.warning(
+                "Modo automático no implementado completamente. Use --interactive."
+            )
+            self.validation_results["warnings"].append(
+                "Modo automático no implementado completamente."
+            )
 
             return self.validation_results
 
@@ -963,13 +1210,26 @@ class DataLayerValidator:
 
         finally:
             if hasattr(self, "browser") and self.browser:
-                self.browser.close()
-                self.playwright.stop()
-                logger.info("Navegador cerrado correctamente")
+                try:
+                    self.browser.close()
+                    logger.info(
+                        "Navegador cerrado correctamente (validate_all_sections)"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error cerrando navegador en validate_all_sections: {e}"
+                    )
+            if hasattr(self, "playwright"):
+                try:
+                    self.playwright.stop()
+                except Exception as e:
+                    logger.error(
+                        f"Error deteniendo playwright en validate_all_sections: {e}"
+                    )
 
     def get_results(self) -> Dict[str, Any]:
         """
-        Obtiene los resultados de la validación.
+        Obtiene los resultados de la validación. (Función no modificada)
 
         Returns:
             Resultados de la validación
