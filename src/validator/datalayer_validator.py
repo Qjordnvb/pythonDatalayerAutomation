@@ -61,48 +61,59 @@ class DataLayerValidator:
         }
 
     def setup_driver(self) -> None:
-        """
-        Configura el navegador de Playwright según los parámetros de configuración.
-        """
-        browser_config = self.config.get("browser", {})
+     """
+     Configura el navegador de Playwright según los parámetros de configuración.
+     En modo interactivo (PWDEBUG) fuerza Chromium headful y limpia cookies/storage.
+     """
+     browser_config = self.config.get("browser", {})
+     self.playwright = sync_playwright().start()
 
-        # Iniciar Playwright y lanzar navegador
-        self.playwright = sync_playwright().start()
+     # Decide si entramos en modo depuración interactiva
+     interactive = bool(os.getenv("PWDEBUG")) or getattr(self, "interactive", False)
 
-        # Configurar opciones del navegador
-        browser_args = []
-        if self.headless:
-            browser_args.append("--headless")
+     # Selecciona navegador: Chromium para interactivo, Firefox para resto
+     browser_type = self.playwright.chromium if interactive else self.playwright.firefox
 
-        # Añadir argumentos adicionales para estabilidad
-        browser_args.extend(
-            ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-        )
+     # Forzamos headful en modo interactivo para ver la UI y el inspector
+     headless = False if interactive else self.headless
 
-        # Configurar el user agent si está especificado
-        user_agent = browser_config.get("user_agent")
+     # Argumentos comunes
+     browser_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+     if self.headless and not interactive:
+        browser_args.append("--headless")
 
-        # Lanzar el navegador
-        self.browser = self.playwright.chromium.launch(
-            headless=self.headless, args=browser_args
-        )
+     # Lanzamos el navegador
+     self.browser = browser_type.launch(headless=headless, args=browser_args)
 
-        # Crear contexto (equivalente a una sesión de navegador)
-        window_size = browser_config.get("window_size", {"width": 1920, "height": 1080})
-        self.context = self.browser.new_context(
-            viewport={"width": window_size["width"], "height": window_size["height"]},
-            user_agent=user_agent,
-        )
+     # Cargo tamaño de ventana
+     window_size = browser_config.get("window_size", {"width": 1920, "height": 1080})
 
-        # Crear página
-        self.page = self.context.new_page()
+     # Preparo los kwargs de contexto, sólo incluyo user_agent si está definido
+     context_kwargs = {
+        "viewport": {"width": window_size["width"], "height": window_size["height"]},
+        "ignore_https_errors": True
+     }
+     user_agent = browser_config.get("user_agent")
+     if user_agent:
+        context_kwargs["user_agent"] = user_agent
 
-        # Configurar timeouts
-        self.page.set_default_timeout(
-            browser_config.get("page_load_timeout", 30) * 1000
-        )
+     # Creamos un contexto completamente limpio
+     self.context = self.browser.new_context(**context_kwargs)
 
-        logger.info("Playwright configurado correctamente")
+     # <-- Limpieza explícita antes de navegar -->
+     # Borra todo rastro de cookies y permisos previos
+     self.context.clear_cookies()
+     self.context.clear_permissions()
+
+     # Nueva página y timeout
+     self.page = self.context.new_page()
+     self.page.set_default_timeout(
+        browser_config.get("page_load_timeout", 30) * 1000
+     )
+
+     logger.info(
+        f"Playwright configurado en {'modo interactivo Chromium' if interactive else 'modo normal Firefox'}"
+     )
 
     def _calculate_match_score(
         self,
@@ -153,9 +164,9 @@ class DataLayerValidator:
         for prop, expected_value in expected_properties.items():
             actual_value = datalayer.get(prop)
             is_dynamic = expected_value is None or (
-                isinstance(expected_value, str)
-                and "{{" in expected_value
-                and "}}" in expected_value
+             isinstance(expected_value, str)
+             and (("{" in expected_value and "}" in expected_value) or # <-- NUEVO: Chequea llaves simples {}
+             ("{{") in expected_value and "}}" in expected_value) # <-- MANTIENE: Chequeo original {{}}
             )
             is_primary = prop in key_fields_primary
             is_secondary = prop in key_fields_secondary
@@ -356,50 +367,44 @@ class DataLayerValidator:
         self, captured_datalayers: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Filtra los DataLayers capturados para eliminar los que no son relevantes para la validación.
-        (Esta función ya no elimina duplicados, se asume que se hizo antes)
+        Filtra los DataLayers capturados para mantener ÚNICAMENTE aquellos
+        que son diccionarios y tienen event: "GAEvent".
 
         Args:
            captured_datalayers: Lista de DataLayers capturados (ya únicos)
 
         Returns:
-           Lista filtrada de DataLayers relevantes (sin eventos GTM, etc.)
+           Lista filtrada solo con DataLayers GAEvent relevantes.
         """
-        # Lista de eventos que no son relevantes para la validación
-        excluded_events = [
-            "gtm.js",
-            "gtm.dom",
-            "gtm.load",
-            "gtm.click",
-            "gtm.scrollDepth",
-            "gtm.historyChange",
-        ]
-
         if not captured_datalayers:
             logger.warning("No se recibieron DataLayers para filtrar")
             return []
 
-        logger.info(f"Filtrando {len(captured_datalayers)} DataLayers únicos...")
+        logger.info(f"Filtrando {len(captured_datalayers)} DataLayers únicos para mantener solo GAEvent...")
 
-        # Filtrar DataLayers que no son relevantes
+        # Filtrar DataLayers
         filtered_datalayers = []
+        excluded_count = 0
         for dl in captured_datalayers:
-            if not isinstance(dl, dict):
-                logger.warning(f"Elemento no es un diccionario durante filtrado: {dl}")
-                continue
-
-            # Si el DataLayer no tiene 'event' o su evento no está en la lista de excluidos
-            if "event" not in dl or dl["event"] not in excluded_events:
+            # Verificar si es un diccionario y tiene la clave 'event' con valor 'GAEvent'
+            if (
+                isinstance(dl, dict)
+                and dl.get("event") == "GAEvent"
+            ):
                 filtered_datalayers.append(dl)
+            else:
+                # Loguear qué se excluye (opcional, útil para depurar)
+                # logger.debug(f"Excluyendo DataLayer por no ser GAEvent: {dl}")
+                excluded_count += 1
 
         logger.info(
-            f"Filtrado GTM completado: {len(filtered_datalayers)} relevantes restantes."
+             f"Filtrado GAEvent completado: {len(filtered_datalayers)} relevantes restantes. ({excluded_count} excluidos)"
         )
 
         # Si después del filtrado no quedan DataLayers, devolver lista vacía
         if not filtered_datalayers:
             logger.warning(
-                "El filtrado GTM eliminó todos los DataLayers. Devolviendo lista vacía."
+                "El filtrado GAEvent eliminó todos los DataLayers. Devolviendo lista vacía."
             )
             return []
 

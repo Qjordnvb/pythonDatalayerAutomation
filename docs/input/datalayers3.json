@@ -1,0 +1,142 @@
+[
+  {
+    "event": "GAEvent",
+    "event_name": "module_{numero_elementos}_conversion",
+    "component_name": "main_banner",
+    "component_type": "button",
+    "element_text": "{texto_boton}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "faq_main_conversion",
+    "component_name": "faqs_opener",
+    "component_type": "accordion",
+    "element_text": "preguntas precuentes"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "faq_interaction",
+    "component_name": "faq_single",
+    "component_type": "accordion",
+    "element_text": "{texto_pregunta}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "news_interaction",
+    "component_name": "filter_articles",
+    "component_type": "button",
+    "element_text": "{texto_filtro}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "news_interaction",
+    "component_name": "news_article",
+    "component_type": "button",
+    "element_text": "seguir - {titulo_noticia}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "top_{posicion}_news_interaction",
+    "component_name": "top_news_article",
+    "component_type": "button",
+    "element_text": "seguir - {titulo_noticia}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "interaction",
+    "component_name": "bp_slide_selector",
+    "component_type": "button",
+    "element_text": "select_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "slider_news_interaction",
+    "component_name": "top_news_slider",
+    "component_type": "button",
+    "element_text": "select_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "slider_news_interaction",
+    "component_name": "top_news_slider",
+    "component_type": "button",
+    "element_text": "next_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "slider_news_interaction",
+    "component_name": "top_news_slider",
+    "component_type": "button",
+    "element_text": "prev_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "product_conversion_{tadaORtipti}",
+    "component_name": "product_information",
+    "component_type": "button",
+    "element_text": "buy - {sku}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "ip_interaction",
+    "component_name": "slider_sku_interaction",
+    "component_type": "button",
+    "element_text": "select_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "ip_interaction",
+    "component_name": "slider_sku_interaction",
+    "component_type": "button",
+    "element_text": "next_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "ip_interaction",
+    "component_name": "slider_sku_interaction",
+    "component_type": "button",
+    "element_text": "prev_slide - {number_slide}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "social_interaction",
+    "component_name": "to_social_network",
+    "component_type": "button",
+    "element_text": "{texto_boton}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "comment_interaction",
+    "component_name": "user_feedback",
+    "component_type": "button",
+    "element_text": "{texto_boton}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "comment_conversion",
+    "component_name": "user_feedback",
+    "component_type": "popup",
+    "element_text": "comentario_enviado"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "comment_interaction",
+    "component_name": "user_feedback",
+    "component_type": "popup",
+    "element_text": "{texto_boton}"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "comment_interaction",
+    "component_name": "more_feedback",
+    "component_type": "button",
+    "element_text": "ver mas comentarios"
+  },
+  {
+    "event": "GAEvent",
+    "event_name": "content_interaction",
+    "component_name": "close_videoPlayer",
+    "component_type": "button",
+    "element_text": "Cerrar video"
+  }
+]

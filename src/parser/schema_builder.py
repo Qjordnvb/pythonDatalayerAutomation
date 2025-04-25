@@ -66,7 +66,20 @@ class SchemaBuilder:
         try:
             # Construir un identificador único para la sección
             # Intentar usar combinaciones de event_category y event_label si están disponibles
-            section_title = f"{datalayer.get('event_category', 'Unknown')} - {datalayer.get('event_label', 'Unknown')}"
+            title_key_priority = ['event_name', 'event_category', 'component_name']
+            section_title = None # Inicializa el título como no encontrado
+
+            # Itera sobre las claves en orden de prioridad
+            for key in title_key_priority:
+                value = datalayer.get(key) # Obtiene el valor de la clave actual
+                # Verifica si el valor existe, es un string y no está vacío (después de quitar espacios)
+                if value and isinstance(value, str) and value.strip():
+                    section_title = value.strip() # Asigna el primer valor válido encontrado
+                    break # Detiene la búsqueda (ya encontramos el título prioritario)
+
+            # Si después de revisar todas las claves prioritarias no se encontró título, usa un valor por defecto
+            if section_title is None:
+                section_title = "Unknown_Reference_Title"
 
             # Identificar campos dinámicos
             dynamic_fields = self._identify_dynamic_fields(datalayer)
