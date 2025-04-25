@@ -14,7 +14,7 @@
     "wait_after_click": 1.5,
     "max_attempts": 3,
     "retry_interval": 1,
-    "warning_time_threshold_ms": 600
+    "warning_time_threshold_ms": 650
 
   },
   "parser": {

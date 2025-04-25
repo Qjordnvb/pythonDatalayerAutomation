@@ -1,0 +1,28 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  datalayer-validator:
+    build: . # Construye la imagen usando el Dockerfile en el directorio actual
+    image: datalayer-validator-app # Nombre opcional para la imagen construida
+    container_name: datalayer_validator_cont # Nombre opcional para el contenedor
+    working_dir: /app # Asegura que el directorio de trabajo sea el mismo que en Dockerfile
+    volumes:
+      # Montar directorios locales importantes dentro del contenedor
+      # Esto permite que los cambios en tu código local se reflejen
+      # y que los archivos de entrada/salida/logs sean persistentes en tu máquina.
+      - ./src:/app/src
+      - ./docs/input:/app/docs/input
+      - ./docs/output:/app/docs/output
+      - ./logs:/app/logs
+      - ./config:/app/config
+      # --- Volúmenes para modo interactivo con GUI en Linux ---
+      # Descomenta estas líneas si usas Linux y quieres ver el navegador
+      # y ejecuta 'xhost +local:docker' en tu terminal ANTES de correr el script.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      # --- Variable para modo interactivo con GUI en Linux ---
+      # Descomenta si usas Linux y quieres ver el navegador
+      - DISPLAY=${DISPLAY}
+    # El comando se pasará a través de run.sh para incluir argumentos
+    # command: ["python", "main.py", "--help"]
