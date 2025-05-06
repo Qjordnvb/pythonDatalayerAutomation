@@ -1,0 +1,17 @@
+# .dockerignore
+
+.git
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.env
+docs/output/*
+docs/input/*~ # Excluir backups de input si los hay
+logs/*
+*.log
+reportes_sitio_X # Si usas carpetas de salida personalizadas
+# Añade cualquier otro archivo/directorio grande que no sea necesario para CONSTRUIR la imagen
