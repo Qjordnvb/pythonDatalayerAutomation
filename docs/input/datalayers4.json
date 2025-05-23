@@ -1,0 +1,247 @@
+[
+  {
+    "_meta_config_": {
+      "expected_gtm_id": "GTM-KZ993K"
+    }
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Participar",
+    "interaction": "true",
+    "component_name": "Slider",
+    "element_text": "Participar"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Participar",
+    "interaction": "true",
+    "component_name": "banner",
+    "element_text": "Participar"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "Card",
+    "event_label": "ver más",
+    "interaction": "true",
+    "component_name": "Restaurantes",
+    "element_text": "Ver más",
+    "product": "{{product}}",
+    "sku": "{{sku}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Categoria {{valorDinamico}}",
+    "interaction": "true",
+    "component_name": "banner",
+    "element_text": "Categoria {{valorDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Video",
+    "event_action": "Play",
+    "event_label": "{{video name}}",
+    "interaction": "true"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Comprar entradas",
+    "interaction": "true",
+    "component_name": "banner",
+    "element_text": "Comprar entradas"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Register",
+    "event_action": "Submit",
+    "event_label": "form-complete",
+    "interaction": "true",
+    "component_name": "button_registro"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Register",
+    "event_action": "Submit",
+    "event_label": "OTP",
+    "interaction": "true",
+    "component_name": "button_validar-código"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Register",
+    "event_action": "ERROR",
+    "event_label": "OTP",
+    "interaction": "true",
+    "component_name": "ERROR"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Register",
+    "event_label": "form-complete",
+    "event_action": "Success",
+    "interaction": "true",
+    "component_name": "button_validar-codigo",
+    "userUid": "{{idDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Register",
+    "event_action": "Submit",
+    "event_label": "DNI"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Login",
+    "event_action": "Submit",
+    "event_label": "OTP",
+    "interaction": "true",
+    "component_name": "button_validar-código"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Login",
+    "event_action": "ERROR",
+    "event_label": "OTP",
+    "interaction": "true",
+    "component_name": "ERROR"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Login",
+    "event_action": "Success",
+    "event_label": "form-complete",
+    "interaction": "true",
+    "component_name": "button_validar-codigo",
+    "userUid": "{{idDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Denegar",
+    "interaction": "true",
+    "component_name": "acceso a GPS",
+    "element_text": "Denegar"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Find Store",
+    "event_action": "Click",
+    "event_label": "Submit",
+    "interaction": "true",
+    "component_name": "acceso a GPS"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Find Store",
+    "event_action": "Localize",
+    "event_label": "Error",
+    "interaction": "true",
+    "Element_Text": "No estas en restaurante",
+    "component_name": "acceso a GPS"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "enviar calificación",
+    "interaction": "true",
+    "component_name": "qualification",
+    "element_text": "enviar calificación",
+    "restaurant": "{{Nombre del restaurante}}",
+    "sabor": "{{dinamico}}",
+    "cerveza": "{{dinamico}}",
+    "servicio": "{{dinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "enviar|volver",
+    "interaction": "true",
+    "component_name": "qualification",
+    "element_text": "enviar|volver",
+    "restaurant": "{{Nombre del restaurante}}",
+    "sabor": "{{dinamico}}",
+    "cerveza": "{{dinamico}}",
+    "servicio": "{{dinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "popup",
+    "event_label": "calificación enviada",
+    "interaction": "true",
+    "component_name": "qualification",
+    "element_text": "enviar|volver",
+    "restaurant": "{{Nombre del restaurante}}",
+    "sabor": "{{dinamico}}",
+   "cerveza": "{{dinamico}}",
+    "servicio": "{{dinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "gira la ruleta",
+    "interaction": "true",
+    "component_name": "ruleta",
+    "element_text": "gira la ruleta"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "continuar",
+    "interaction": "true",
+    "component_name": "ruleta",
+    "element_text": "continuar",
+    "userUid": "{{idDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "popup",
+    "event_label": "entradas al festival maestros cusqueña",
+    "interaction": "true",
+    "component_name": "ruleta",
+    "element_text": "ABCD1234",
+    "userUid": "{{idDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "ir a YAPE",
+    "interaction": "true",
+    "component_name": "ruleta",
+    "element_text": "ABCD1234",
+    "userUid": "{{idDinamico}}"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "button",
+    "event_label": "Encontrar restaurante",
+    "interaction": "true",
+    "component_name": "ZDU",
+    "element_text": "Encontrar restaurante"
+  },
+  {
+    "event": "GAEvent",
+    "event_category": "Content",
+    "event_action": "Card",
+    "event_label": "{{valorDinamico}}",
+    "interaction": "true",
+    "component_name": "ZDU",
+    "element_text": "tus votaciones|tus premios"
+  }
+]

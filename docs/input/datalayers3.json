@@ -1,5 +1,10 @@
 [
   {
+    "_meta_config_": {
+      "expected_gtm_id": "GTM-MNJCGXWJ"
+    }
+  },
+  {
     "event": "GAEvent",
     "event_name": "module_{numero_elementos}_conversion",
     "component_name": "main_banner",

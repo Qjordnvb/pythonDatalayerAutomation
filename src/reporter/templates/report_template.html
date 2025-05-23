@@ -266,6 +266,31 @@
             0% { background-color: #fffde7; box-shadow: 0 0 10px #ffecb3; }
             100% { background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         }
+
+        .status-badge {
+    display: inline-block;
+    padding: 0.25em 0.6em;
+    font-size: 0.85em;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 0.25rem;
+    color: #fff; /* Color de texto blanco por defecto */
+    text-transform: uppercase;
+}
+.code {
+    font-size: 20px;
+    color: #000;
+    border: 0.5px #000;
+    padding: 1rem;
+}
+.status-badge.status-passed { background-color: #28a745; /* Verde */ }
+.status-badge.status-failed { background-color: #dc3545; /* Rojo */ }
+.status-badge.status-skipped { background-color: #6c757d; /* Gris */ }
+.status-badge.status-error { background-color: #ffc107; color: #212529; /* Amarillo/Naranja con texto oscuro */ }
+
     </style>
 </head>
 <body>
@@ -295,7 +320,58 @@
          data-coverage-percent="{{ comparison.coverage_percent }}"
          style="display: none;">
     </div>
+    <hr> {# O algún otro separador visual que uses #}
 
+<div class="section">
+    <h2>Validación de Google Tag Manager (GTM) ID</h2>
+
+
+    {% if gtm_validation and gtm_validation.status %}
+        <p>
+            <strong>ID de GTM Esperado:</strong>
+            {% if gtm_validation.expected_id %}
+                <code class="code" >{{ gtm_validation.expected_id | e }}</code>
+            {% else %}
+                <em>No especificado (la validación de GTM ID fue omitida o no configurada).</em>
+            {% endif %}
+        </p>
+
+
+        {% if gtm_validation.status != 'not_run' %}
+
+
+                    <p>
+                        <strong>GTM ID Encontrado:</strong>
+                        {% if gtm_validation.found_ids and gtm_validation.found_ids | length > 0 %}
+                            <code class="code">{{ gtm_validation.found_ids | join(', ') | e }}</code>
+                        {% elif gtm_validation.status == 'failed' and (not gtm_validation.found_ids or gtm_validation.found_ids | length == 0) %}
+
+                            <em>Ninguno.</em>
+                        {% elif gtm_validation.status == 'passed' and (not gtm_validation.found_ids or gtm_validation.found_ids | length == 0) %}
+
+                            <em>(Estado 'Pasó' pero no se listaron IDs encontrados)</em>
+                        {% endif %}
+                    </p>
+
+                    {% if not (gtm_validation.status == 'skipped' and not gtm_validation.expected_id) %}
+                <p>
+                    <strong>Estado de Validación:</strong>
+                    <span class="status-badge status-{{ gtm_validation.status | lower }}">
+                        {{ gtm_validation.status | capitalize }}
+                    </span>
+                </p>
+
+
+                {% if gtm_validation.status == 'passed' or gtm_validation.status == 'failed' %}
+                {% endif %}
+            {% elif gtm_validation.status == 'skipped' and not gtm_validation.expected_id %}
+                 <p><em>La validación de GTM ID fue omitida porque no se especificó un ID esperado en el archivo de entrada.</em></p>
+            {% endif %}
+        {% endif %}
+    {% else %}
+        <p><em>No hay información de validación de GTM ID disponible (o no se configuró un ID esperado en el archivo de entrada).</em></p>
+    {% endif %}
+</div>
     <div class="summary">
         <h2>Resumen General</h2>
         <p style="text-align: center; margin-bottom: 20px;">

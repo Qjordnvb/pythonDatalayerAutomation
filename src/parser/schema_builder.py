@@ -19,6 +19,29 @@ class SchemaBuilder:
         """
         self.reference_datalayers = reference_datalayers
 
+        self._expected_gtm_id_from_input = None
+        self._actual_datalayer_definitions_for_schema = []
+
+        if reference_datalayers and isinstance(reference_datalayers[0], dict):
+            meta_config_obj = reference_datalayers[0].get("_meta_config_")
+            if meta_config_obj and isinstance(meta_config_obj, dict):
+                self._expected_gtm_id_from_input = meta_config_obj.get(
+                    "expected_gtm_id"
+                )
+                self._actual_datalayer_definitions_for_schema = reference_datalayers[
+                    1:
+                ]  # Usa el RESTO de la lista
+                if self._expected_gtm_id_from_input:
+                    logger.info(
+                        f"GTM ID esperado extraído del archivo de entrada: {self._expected_gtm_id_from_input}"
+                    )
+            else:
+                # El primer objeto NO es de meta-config, procesa toda la lista
+                self._actual_datalayer_definitions_for_schema = reference_datalayers
+        else:
+            # Lista vacía o primer elemento no es dict
+            self._actual_datalayer_definitions_for_schema = reference_datalayers
+
     def build_schema(self) -> Dict[str, Any]:
         """
         Construye el esquema de validación para todos los datalayers
@@ -30,7 +53,7 @@ class SchemaBuilder:
 
         schema = {
             "metadata": {
-                "total_sections": len(self.reference_datalayers),
+                "total_sections": len(self._actual_datalayer_definitions_for_schema),
                 "generation_time": "",  # Se llenará en el reporte
             },
             "global_patterns": {
@@ -38,16 +61,25 @@ class SchemaBuilder:
                 "element_text": r"{{element_name}}",
                 "user_type": "null",
             },
+            "expected_gtm_id": self._expected_gtm_id_from_input,
             "sections": [],
         }
 
         # Procesar cada DataLayer de referencia
-        for i, datalayer in enumerate(self.reference_datalayers):
-            section_schema = self._build_section_schema(i, datalayer)
+        for i, datalayer_raw_data in enumerate(
+            self._actual_datalayer_definitions_for_schema
+        ):
+            section_schema = self._build_section_schema(
+                i, datalayer_raw_data
+            )  # Tu método existente
             if section_schema:
                 schema["sections"].append(section_schema)
 
-        logger.info(f"Esquema construido con {len(schema['sections'])} secciones")
+        logger.info(f"Esquema construido con {len(schema['sections'])} secciones.")
+        if schema["expected_gtm_id"]:
+            logger.info(
+                f"El esquema incluye GTM ID esperado: {schema['expected_gtm_id']}"
+            )
         return schema
 
     def _build_section_schema(

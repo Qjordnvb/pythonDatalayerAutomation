@@ -31,6 +31,9 @@ class DataLayerValidator:
         schema: Dict[str, Any],
         headless: bool = True,
         config: Dict[str, Any] = None,
+        emulate_mobile: bool = False,  # Nuevo
+        device_name: Optional[str] = None,  # Nuevo
+        interactive: bool = False,
     ):
         """
         Inicializa el validador con una URL, un esquema y configuración.
@@ -44,7 +47,19 @@ class DataLayerValidator:
         self.url = url
         self.schema = schema
         self.headless = headless
+        self.interactive = interactive
         self.config = config or {}
+        self.emulate_mobile = emulate_mobile
+        self.device_name = device_name
+        self.schema_object_from_builder = (
+            schema  # Guardar el schema completo por si necesitas otros metadatos
+        )
+        self.schema_sections_to_validate = schema.get(
+            "sections", []
+        )  # Tu lista de secciones a validar
+        self.expected_gtm_id_from_schema = schema.get(
+            "expected_gtm_id"
+        )  # LEER GTM ID DEL SCHEMA
         self.driver = None
         self.validation_results = {
             "valid": True,
@@ -58,62 +73,187 @@ class DataLayerValidator:
                 "invalid_sections": 0,
                 "not_found_sections": 0,
             },
+            "gtm_id_validation_details": {
+                "status": "not_run",
+                "message": "Validación de GTM ID no ejecutada.",
+                "expected_id": self.expected_gtm_id_from_schema,  # Usar el ID del schema
+                "found_ids": [],
+            },
         }
 
+        self.external_navigation_detected = False
+        self.original_interactive_url = ""
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
     def setup_driver(self) -> None:
-     """
-     Configura el navegador de Playwright según los parámetros de configuración.
-     En modo interactivo (PWDEBUG) fuerza Chromium headful y limpia cookies/storage.
-     """
-     browser_config = self.config.get("browser", {})
-     self.playwright = sync_playwright().start()
+        """
+        Configura el navegador de Playwright según los parámetros de configuración.
+        En modo interactivo (PWDEBUG) fuerza Chromium headful y limpia cookies/storage.
+        """
+        browser_config = self.config.get("browser", {})
+        self.playwright = sync_playwright().start()
 
-     # Decide si entramos en modo depuración interactiva
-     interactive = bool(os.getenv("PWDEBUG")) or getattr(self, "interactive", False)
+        # Decide si entramos en modo depuración interactiva
+        interactive = bool(os.getenv("PWDEBUG")) or getattr(self, "interactive", False)
 
-     # Selecciona navegador: Chromium para interactivo, Firefox para resto
-     browser_type = self.playwright.chromium if interactive else self.playwright.firefox
+        # Siempre usar Chromium
+        browser_type = self.playwright.chromium
+        if getattr(self, "emulate_mobile", False):
+            logger.info("Emulación móvil solicitada, usando Chromium.")
+        elif interactive:
+            logger.info("Modo interactivo activado, usando Chromium.")
+        else:
+            logger.info("Modo normal desktop, usando Chromium.")
 
-     # Forzamos headful en modo interactivo para ver la UI y el inspector
-     headless = False if interactive else self.headless
+        # Forzamos headful en modo interactivo para ver la UI y el inspector
+        headless = False if interactive else self.headless
 
-     # Argumentos comunes
-     browser_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-     if self.headless and not interactive:
-        browser_args.append("--headless")
+        # Argumentos comunes
+        browser_args = ["--no-sandbox", "--disable-gpu"]
+        if self.headless and not interactive:
+            browser_args.append("--headless")
 
-     # Lanzamos el navegador
-     self.browser = browser_type.launch(headless=headless, args=browser_args)
+        # Lanzamos el navegador
+        self.browser = browser_type.launch(headless=headless, args=browser_args)
 
-     # Cargo tamaño de ventana
-     window_size = browser_config.get("window_size", {"width": 1920, "height": 1080})
+        # Cargo tamaño de ventana
+        window_size = browser_config.get("window_size", {"width": 1920, "height": 1080})
 
-     # Preparo los kwargs de contexto, sólo incluyo user_agent si está definido
-     context_kwargs = {
-        "viewport": {"width": window_size["width"], "height": window_size["height"]},
-        "ignore_https_errors": True
-     }
-     user_agent = browser_config.get("user_agent")
-     if user_agent:
-        context_kwargs["user_agent"] = user_agent
+        # Preparo los kwargs de contexto, sólo incluyo user_agent si está definido
+        context_kwargs = {
+            "viewport": {
+                "width": window_size["width"],
+                "height": window_size["height"],
+            },
+            "ignore_https_errors": True,
+        }
+        user_agent = browser_config.get("user_agent")
+        if user_agent:
+            context_kwargs["user_agent"] = user_agent
 
-     # Creamos un contexto completamente limpio
-     self.context = self.browser.new_context(**context_kwargs)
+        # Aplicar emulación móvil SOLO si está activada
+        if getattr(self, "emulate_mobile", False):
+            logger.info(
+                f"Emulación móvil activada. Dispositivo: {getattr(self, 'device_name', 'Genérico')}"
+            )
 
-     # <-- Limpieza explícita antes de navegar -->
-     # Borra todo rastro de cookies y permisos previos
-     self.context.clear_cookies()
-     self.context.clear_permissions()
+            device_to_emulate = getattr(self, "device_name", None)
+            if (
+                device_to_emulate
+                and hasattr(self.playwright, "devices")
+                and device_to_emulate in self.playwright.devices
+            ):
+                # Usar un dispositivo predefinido por Playwright
+                device_params = self.playwright.devices[device_to_emulate]
+                context_kwargs.update(device_params)
+                logger.info(
+                    f"Aplicando emulación para dispositivo predefinido Playwright: {device_to_emulate}"
+                )
+            else:
+                if device_to_emulate:
+                    logger.warning(
+                        f"Nombre de dispositivo '{device_to_emulate}' no encontrado en playwright.devices. Usando emulación genérica."
+                    )
 
-     # Nueva página y timeout
-     self.page = self.context.new_page()
-     self.page.set_default_timeout(
-        browser_config.get("page_load_timeout", 30) * 1000
-     )
+                # Configuración genérica por defecto para móvil
+                context_kwargs.update(
+                    {
+                        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+                        "viewport": {
+                            "width": 375,
+                            "height": 812,
+                        },
+                        "device_scale_factor": 3,
+                        "is_mobile": True,
+                        "has_touch": True,
+                        "permissions": ["geolocation"],
+                        "geolocation": {
+                            "longitude": -74.092250,
+                            "latitude": 4.742571,
+                        },
+                    }
+                )
+                logger.info("Aplicando emulación móvil genérica.")
 
-     logger.info(
-        f"Playwright configurado en {'modo interactivo Chromium' if interactive else 'modo normal Firefox'}"
-     )
+        # Creamos un contexto
+        self.context = self.browser.new_context(**context_kwargs)
+
+        # Limpieza explícita antes de navegar
+        self.context.clear_cookies()
+        self.context.clear_permissions()
+
+        # Nueva página y timeout
+        self.page = self.context.new_page()
+        self.page.set_default_timeout(
+            browser_config.get("page_load_timeout", 30) * 1000
+        )
+
+        mode_description = []
+        if interactive:
+            mode_description.append("modo interactivo")
+        if getattr(self, "emulate_mobile", False):
+            mode_description.append("emulación móvil")
+        if not mode_description:
+            mode_description.append("modo desktop normal")
+
+        logger.info(
+            f"Playwright configurado: Chromium en {', '.join(mode_description)}"
+        )
+
+    def _validate_expected_gtm_id(self):  # Síncrono
+        gtm_validation_results = self.validation_results["gtm_id_validation_details"]
+        if not self.page or self.page.is_closed():
+            logger.error("Página no disponible para validación GTM.")
+            gtm_validation_results.update(
+                {"status": "error", "message": "Página no disponible."}
+            )
+            return
+        if not self.expected_gtm_id_from_schema:  # Usa el ID del schema
+            logger.info("No GTM ID en schema. Saltando validación GTM.")
+            gtm_validation_results.update(
+                {"status": "skipped", "message": "No GTM ID esperado en schema."}
+            )
+            return
+        logger.info(
+            f"Validando GTM ID. Esperado (del schema): {self.expected_gtm_id_from_schema}"
+        )
+        found_ids = []
+        try:
+            content = self.page.content()
+            gtm_pattern = r"googletagmanager\.com/gtm\.js\?id=(GTM-[A-Z0-9]+)"
+            found_ids = list(set(re.findall(gtm_pattern, content)))
+            gtm_validation_results["found_ids"] = found_ids
+            if not found_ids:
+                logger.warning("No script GTM/GA4 en página.")
+                gtm_validation_results.update(
+                    {"status": "failed", "message": "No GTM ID encontrado en página."}
+                )
+                return
+            if self.expected_gtm_id_from_schema in found_ids:
+                gtm_validation_results.update(
+                    {
+                        "status": "passed",
+                        "message": f"GTM ID esperado '{self.expected_gtm_id_from_schema}' encontrado.",
+                    }
+                )
+            else:
+                gtm_validation_results.update(
+                    {
+                        "status": "failed",
+                        "message": f"GTM ID esperado '{self.expected_gtm_id_from_schema}' no encontrado. IDs: {', '.join(found_ids)}.",
+                    }
+                )
+        except PlaywrightTimeoutError:
+            logger.error("Timeout GTM val.", exc_info=True)
+            gtm_validation_results.update({"status": "error", "message": "Timeout."})
+        except Exception as e:
+            logger.error(f"Error GTM val: {e}", exc_info=True)
+            gtm_validation_results.update(
+                {"status": "error", "message": f"Error: {str(e)}"}
+            )
 
     def _calculate_match_score(
         self,
@@ -558,7 +698,6 @@ class DataLayerValidator:
         except Exception as e:
             logger.error(f"Error en _handle_navigation: {e}", exc_info=False)
 
-    # --- Función _compare_with_reference MODIFICADA ---
     def _compare_with_reference(
         self, captured_datalayers: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
@@ -701,6 +840,15 @@ class DataLayerValidator:
 
             self.original_interactive_url = self.page.url
             logger.info(f"URL base establecida: {self.original_interactive_url}")
+
+            if self.page and not self.page.is_closed():
+                logger.info("Realizando validación de GTM ID...")
+                self._validate_expected_gtm_id()  # LLAMADA SÍNCRONA
+            else:
+                logger.warning("No se pudo validar GTM ID: página no disponible.")
+                self.validation_results["gtm_id_validation_details"].update(
+                    {"status": "error", "message": "Página no disponible."}
+                )
 
             self.page.on("framenavigated", self._handle_navigation)
 
@@ -1081,6 +1229,12 @@ class DataLayerValidator:
             logger.error(
                 f"Error durante validación interactiva: {str(e)}", exc_info=True
             )
+            self.validation_results.setdefault("errors", []).append(
+                f"Error crítico: {str(e)}"
+            )
+            self.validation_results["gtm_id_validation_details"].update(
+                {"status": "error", "message": f"Error general: {str(e)}"}
+            )
             self.validation_results["valid"] = False
             self.validation_results["errors"].append(f"Error validación: {str(e)}")
             if not isinstance(self.validation_results.get("warnings"), list):
@@ -1114,53 +1268,6 @@ class DataLayerValidator:
                     self.playwright.stop()
                 except Exception as stop_err:
                     logger.error(f"Error al detener playwright: {stop_err}")
-
-    # --- FIN Función interactive_validation MODIFICADA ---
-
-    def validate_all_sections(self) -> Dict[str, Any]:
-        # ... (código sin cambios) ...
-        try:
-            self.setup_driver()
-            logger.info(f"Navegando a URL inicial: {self.url}")
-            self.page.goto(self.url)
-            timeout = self.config.get("browser", {}).get("wait_timeout", 10) * 1000
-            self.page.wait_for_selector("body", timeout=timeout)
-            sections = self.schema.get("sections", [])
-            total_sections = len(sections)
-            logger.info(f"Validando {total_sections} secciones")
-            self.validation_results["summary"]["total_sections"] = total_sections
-            self.validation_results["summary"]["not_found_sections"] = total_sections
-            self.validation_results["valid"] = False
-            logger.warning(
-                "Modo automático no implementado completamente. Use --interactive."
-            )
-            self.validation_results["warnings"].append(
-                "Modo automático no implementado completamente."
-            )
-            return self.validation_results
-        except Exception as e:
-            logger.error(f"Error durante la validación: {str(e)}", exc_info=True)
-            self.validation_results["valid"] = False
-            self.validation_results["errors"].append(f"Error de validación: {str(e)}")
-            return self.validation_results
-        finally:
-            if hasattr(self, "browser") and self.browser:
-                try:
-                    self.browser.close()
-                    logger.info(
-                        "Navegador cerrado correctamente (validate_all_sections)"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error cerrando navegador en validate_all_sections: {e}"
-                    )
-            if hasattr(self, "playwright"):
-                try:
-                    self.playwright.stop()
-                except Exception as e:
-                    logger.error(
-                        f"Error deteniendo playwright en validate_all_sections: {e}"
-                    )
 
     def validate_all_sections(self) -> Dict[str, Any]:
         """

@@ -192,7 +192,9 @@ class ReportGenerator:
 
         try:
             template = self.jinja_env.get_template("report_template.html")
-
+            gtm_validation_info = validation_results.get(
+                "gtm_id_validation_details", {}
+            )
             all_details = validation_results.get("details", [])
             summary_data = validation_results.get("summary", {})
 
@@ -266,6 +268,7 @@ class ReportGenerator:
                 "success_percent": round(success_percent, 1),
                 "details_with_warnings": details_with_warnings,  # Para la lista desplegable de warnings
                 "general_warnings": validation_results.get("warnings", []),
+                "gtm_validation": gtm_validation_info,
             }
 
             html_content = template.render(**context)

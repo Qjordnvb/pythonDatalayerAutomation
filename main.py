@@ -86,6 +86,18 @@ def main():
         help="Ejecutar en modo interactivo (navegación manual)",
     )
 
+    parser.add_argument(
+        "--emulate_mobile",
+        action="store_true",
+        help="Habilita la emulación de un dispositivo móvil (genérico por defecto).",
+    )
+    parser.add_argument(
+        "--device_name",
+        type=str,
+        default=None,
+        help="Nombre del dispositivo móvil a emular (ej: 'iPhone X', 'Pixel 5'). Usar con --emulate_mobile.",
+    )
+
     args = parser.parse_args()
 
     # Cargar configuración
@@ -127,8 +139,11 @@ def main():
         validator = DataLayerValidator(
             url=args.url,
             schema=validation_schema,
-            headless=not args.interactive,  # Usar modo visible si es interactivo
+            headless=not args.interactive,
+            interactive=args.interactive,  # Usar modo visible si es interactivo
             config=config,
+            emulate_mobile=args.emulate_mobile,
+            device_name=args.device_name,
         )
 
         # Usar modo interactivo o automático según la opción
@@ -137,6 +152,14 @@ def main():
             validation_results = validator.interactive_validation()
         else:
             validation_results = validator.validate_all_sections()
+
+        if args.emulate_mobile:
+            if args.device_name:
+                logging.info(
+                    f"Emulación móvil activada para dispositivo: {args.device_name}"
+                )
+            else:
+                logging.info("Emulación móvil activada con configuración genérica.")
 
         # Guardar resultados crudos para referencia
         results_path = os.path.join(output_dir, "validation_results.json")
