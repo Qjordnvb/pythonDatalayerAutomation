@@ -1,6 +1,4 @@
 # docker-compose.yml
-version: '3.8'
-
 services:
   datalayer-validator:
     build: . # Construye la imagen usando el Dockerfile en el directorio actual

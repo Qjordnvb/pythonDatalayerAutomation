@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 #    Esto incluye tu carpeta 'src', 'config', 'main.py', etc.
 COPY . .
 
+# 5.5. Crear directorios de logs y output con permisos correctos
+RUN mkdir -p /app/logs /app/docs/output && chmod -R 777 /app/logs /app/docs/output
+
 # 6. (Opcional pero recomendado) Instalar navegadores explícitamente dentro del Dockerfile
 #    Aunque la imagen base los trae, esto asegura que estén presentes
 #    y puede facilitar la actualización de versiones si es necesario en el futuro.

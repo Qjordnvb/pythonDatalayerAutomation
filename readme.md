@@ -42,7 +42,7 @@ El script `run.sh` simplifica la ejecución de la herramienta. Ejemplos de uso:
 ### Especificar directorio de salida personalizado
 
 ```bash
-./run.sh --url "https://sitio-a-validar.com" --json "docs/input/datalayers.json" --output "mis-reportes"
+./run.sh --url "https://sitio-a-validar.com" --json "docs/input/datalayers.json" --interactive --output "mis-reportes"
 ```
 
 ## Interfaz gráfica en modo interactivo
